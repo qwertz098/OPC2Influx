@@ -1,0 +1,54 @@
+<div class="card mb-2 mt-1" id="alarm-edit-{{ rule.id }}" style="margin-left:1rem">
+  <div class="card-body" style="padding:.75rem">
+    <form action="/config/alarm-rules/{{ rule.id }}/update" method="post">
+      <div class="form-row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="flex:2;min-width:200px">
+          <label class="form-label">Signal</label>
+          <input class="input" type="text" name="subscription_id" list="subs-datalist"
+                 value="{{ rule.subscription_id }}" required>
+        </div>
+        <div class="form-group" style="flex:0 0 90px">
+          <label class="form-label">Condition</label>
+          <select class="select" name="condition">
+            {% for op in ['>', '<', '=', '<>'] %}
+            <option value="{{ op }}" {% if rule.condition == op %}selected{% endif %}>{{ op }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="flex:0 0 120px">
+          <label class="form-label">Value</label>
+          <input class="input" type="text" name="threshold" value="{{ rule.threshold }}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="input" type="text" name="name" value="{{ rule.name }}">
+        </div>
+        <div class="form-group" style="flex:0 0 120px">
+          <label class="form-label" title="Min. time before the same rule fires again">Cooldown (s)</label>
+          <input class="input input-sm" type="number" name="cooldown_seconds"
+                 value="{{ rule.cooldown_seconds }}" min="1">
+        </div>
+        <div class="form-group" style="flex:0 0 100px">
+          <label class="form-label" title="Condition must hold for this many seconds before alert fires">Delay (s)</label>
+          <input class="input input-sm" type="number" name="alert_delay_seconds"
+                 value="{{ rule.alert_delay_seconds }}" min="0">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:4px">
+          <label class="checkbox-label">
+            <input type="checkbox" name="latch" value="true" {% if rule.latch %}checked{% endif %}>
+            Once (latch)
+          </label>
+          <label class="checkbox-label" style="margin-top:4px">
+            <input type="checkbox" name="send_email" value="true" {% if rule.send_email %}checked{% endif %}>
+            Send email
+          </label>
+        </div>
+        <div class="form-actions" style="align-self:flex-end">
+          <button type="submit" class="btn btn-primary btn-xs">Save</button>
+          <button type="button" class="btn btn-ghost btn-xs"
+                  onclick="document.getElementById('alarm-edit-cell-{{ rule.id }}').innerHTML=''">Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>

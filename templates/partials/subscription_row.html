@@ -1,0 +1,36 @@
+<tr id="row-{{ sub.id }}" class="{% if not sub.enabled %}opacity-50{% endif %}">
+  <td>{{ sub.display_name or sub.node_id }}</td>
+  <td class="text-sm text-muted">{{ sub.server_id }}</td>
+  <td class="mono text-xs">{{ sub.node_id }}</td>
+  <td class="mono text-sm" title="{{ sub.influxdb.measurement }}">{{ stripped_measurement if stripped_measurement is defined else sub.influxdb.measurement }}</td>
+  <td class="text-sm">{{ interval_label(sub.polling.interval_ms) }}</td>
+  <td class="text-sm">
+    {{ sub.polling.write_mode }}
+    {% if sub.polling.threshold %}<span class="text-muted">({{ sub.polling.threshold }})</span>{% endif %}
+  </td>
+  <td class="text-sm">{{ heartbeat_label(sub.polling.heartbeat_interval_seconds) }}</td>
+  <td>
+    {% if all_tags is defined %}
+    {% include "partials/subscription_tag_badges.html" %}
+    {% endif %}
+  </td>
+  <td>
+    <span class="badge {% if sub.enabled %}badge-ok{% else %}badge-mode{% endif %}">
+      {{ 'Active' if sub.enabled else 'Disabled' }}
+    </span>
+  </td>
+  <td class="actions">
+    <button class="btn btn-ghost btn-xs"
+            hx-get="/subscriptions/{{ sub.id }}/edit"
+            hx-target="#edit-cell-{{ sub.id }}"
+            hx-swap="innerHTML">Edit</button>
+    <form action="/subscriptions/{{ sub.id }}/toggle" method="post" style="display:inline">
+      <button class="btn btn-ghost btn-xs">{{ 'Disable' if sub.enabled else 'Enable' }}</button>
+    </form>
+    <form action="/subscriptions/{{ sub.id }}/delete" method="post" style="display:inline"
+          onsubmit="return confirm('Delete this subscription?')">
+      <button class="btn btn-danger btn-xs">Delete</button>
+    </form>
+  </td>
+</tr>
+<tr><td id="edit-cell-{{ sub.id }}" colspan="10" style="padding:0;border:0;line-height:0;overflow:hidden"></td></tr>

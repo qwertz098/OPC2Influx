@@ -1,0 +1,64 @@
+services:
+  opcua2influxdb:
+    build: .
+    container_name: opcua2influxdb
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - config_data:/config
+      - data_volume:/data
+    environment:
+      - APP_CONFIG_DIR=/config
+      - APP_DATA_DIR=/data
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+      # InfluxDB token — reference a secret or set directly
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-}
+      # Site label shown in browser tab and email subjects
+      - SITE_NAME=${SITE_NAME:-}
+      # SMTP email configuration
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_TLS=${SMTP_TLS:-true}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      # Multiple recipients: comma-separated
+      - SMTP_TO=${SMTP_TO:-}
+    networks:
+      - opcua_net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
+  influxdb:
+    image: influxdb:2.7
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    volumes:
+      - influx_data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_ADMIN_PASSWORD:-adminpassword123}
+      - DOCKER_INFLUXDB_INIT_ORG=myorg
+      - DOCKER_INFLUXDB_INIT_BUCKET=opcua
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN:-my-super-secret-token}
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - opcua_net
+
+volumes:
+  config_data:
+  data_volume:
+  influx_data:
+
+networks:
+  opcua_net:
+    driver: bridge

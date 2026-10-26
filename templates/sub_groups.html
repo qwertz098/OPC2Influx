@@ -1,0 +1,58 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Subscription Groups</h1>
+  <a href="/browser" class="btn btn-primary">+ Create via Browser</a>
+</div>
+
+{% if groups %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Server</th>
+        <th>Parent Node</th>
+        <th>Children</th>
+        <th>Subscriptions</th>
+        <th>Rescan</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group in groups %}
+      <tr>
+        <td>{{ group.display_name }}</td>
+        <td class="text-sm text-muted">{{ group.server_id }}</td>
+        <td class="mono text-xs">{{ group.parent_node_id }}</td>
+        <td class="text-sm">{{ group.child_browse_names | join(', ') }}</td>
+        <td>{{ group_sub_counts.get(group.id, 0) }}</td>
+        <td class="text-sm">
+          {% if group.dynamic_rescan.enabled %}
+          Every {{ group.dynamic_rescan.interval_seconds }} s
+          {% else %}
+          Disabled
+          {% endif %}
+        </td>
+        <td>
+          <form action="/subscription-groups/{{ group.id }}/delete" method="post" style="display:inline"
+                onsubmit="return confirm('Delete group and all its subscriptions?')">
+            <button class="btn btn-danger btn-xs">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center text-muted">
+    <p>No subscription groups yet.</p>
+    <p class="text-sm mt-2">In the <a href="/browser">OPC UA Browser</a>, select nodes from one instance and click "Apply to siblings →" to create a group.</p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

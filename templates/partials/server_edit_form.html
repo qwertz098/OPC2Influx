@@ -1,0 +1,80 @@
+<div class="card mb-3" id="edit-srv-{{ srv.id }}">
+  <div class="card-header">Edit Server — {{ srv.display_name }}</div>
+  <div class="card-body">
+    <form action="/config/servers/{{ srv.id }}/update" method="post">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="input" type="text" name="display_name" value="{{ srv.display_name }}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Endpoint URL</label>
+          <input class="input" type="text" name="endpoint_url" value="{{ srv.endpoint_url }}" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Security Mode</label>
+          <select class="select" name="security_mode">
+            {% for m in ["None", "Sign", "SignAndEncrypt"] %}
+            <option value="{{ m }}" {% if srv.security_mode == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Authentication</label>
+          <select class="select" name="auth_type" onchange="toggleAuthFields(this)">
+            <option value="anonymous" {% if srv.auth.type == 'anonymous' %}selected{% endif %}>Anonymous</option>
+            <option value="username"  {% if srv.auth.type == 'username'  %}selected{% endif %}>Username / Password</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" id="auth-fields-edit-{{ srv.id }}"
+           style="{{ '' if srv.auth.type == 'username' else 'display:none' }}">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input class="input" type="text" name="username" value="{{ srv.auth.username }}" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password <span class="text-xs text-muted">(leave blank to keep current)</span></label>
+          <input class="input" type="password" name="password" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="max-width:200px">
+          <label class="form-label">Reconnect Interval (s)</label>
+          <input class="input input-sm" type="number" name="reconnect_interval"
+                 value="{{ srv.reconnect_interval_seconds }}" min="1">
+        </div>
+        <div class="form-group" style="flex-direction:column;align-self:flex-end;padding-bottom:6px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+            <input type="checkbox" name="bool_as_int" value="1"
+                   {% if srv.bool_as_int %}checked{% endif %}>
+            Log booleans as integer 0/1
+          </label>
+          <span class="form-hint" style="margin-top:3px">
+            Unchecked: booleans written as native InfluxDB <code>true</code>/<code>false</code>.<br>
+            Checked: written as integer <code>0</code>/<code>1</code> — needed if these fields already exist as integers in your bucket, or if you want to do arithmetic (mean, sum) in Flux queries.<br>
+            <strong>Changing this on an existing bucket causes a schema conflict</strong> for affected fields. Delete the old field in InfluxDB (Data Explorer → Delete) before switching.
+          </span>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-ghost"
+                onclick="document.getElementById('edit-srv-{{ srv.id }}').remove()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function() {
+  var sel = document.querySelector('#edit-srv-{{ srv.id }} select[name="auth_type"]');
+  if (sel) {
+    sel.onchange = function() {
+      document.getElementById('auth-fields-edit-{{ srv.id }}').style.display =
+        this.value === 'username' ? '' : 'none';
+    };
+  }
+})();
+</script>

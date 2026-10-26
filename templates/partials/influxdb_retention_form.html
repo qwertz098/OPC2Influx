@@ -1,0 +1,46 @@
+<td colspan="7" style="padding: 0;">
+  <div class="card" style="margin: 4px 0; border-radius: 6px;">
+    <div class="card-body">
+      {% if error %}
+      <div class="alert alert-warn mb-3">
+        <strong>Could not read current retention from InfluxDB:</strong> {{ error }}
+        <br>You can still set new values below — they will be applied when you submit.
+      </div>
+      {% endif %}
+      <form hx-post="/config/influxdb/{{ t.id }}/retention"
+            hx-target="#retention-result-{{ t.id | slugify }}"
+            hx-swap="innerHTML"
+            hx-indicator="#retention-spinner-{{ t.id | slugify }}">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Retention Duration (days)</label>
+            <input class="input input-sm" type="number" name="retention_days" min="0" step="1"
+                   value="{{ (current.every_seconds / 86400) | round(2) if current.every_seconds else 0 }}">
+            <span class="form-hint">0 = keep data forever</span>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Shard Group Duration</label>
+            <select class="select" name="shard_mode"
+                    onchange="var g=this.closest('.form-group');g.querySelector('.shard-manual').style.display=this.value==='manual'?'':'none'">
+              <option value="auto" {% if not current.shard_group_duration_seconds %}selected{% endif %}>Auto (recommended)</option>
+              <option value="manual" {% if current.shard_group_duration_seconds %}selected{% endif %}>Manual</option>
+            </select>
+            <input class="input input-sm shard-manual" type="number" name="shard_group_hours" min="1" step="1"
+                   value="{{ (current.shard_group_duration_seconds / 3600) | round(2) if current.shard_group_duration_seconds else 24 }}"
+                   style="margin-top:4px;{% if not current.shard_group_duration_seconds %}display:none{% endif %}">
+            <span class="form-hint">Auto lets InfluxDB pick a shard-group size based on the retention duration. Manual sets an explicit size in hours.</span>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save Retention</button>
+          <button type="button" class="btn btn-ghost"
+                  onclick="var r=document.getElementById('retention-{{ t.id | slugify }}');r.innerHTML='';r.style.display='none'">Cancel</button>
+          <span id="retention-spinner-{{ t.id | slugify }}" class="htmx-indicator badge badge-info">⏳ Saving…</span>
+          <span id="retention-result-{{ t.id | slugify }}"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</td>

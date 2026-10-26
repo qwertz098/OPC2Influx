@@ -1,0 +1,55 @@
+<div style="padding:8px 12px;background:#f1f5f9">
+  <form hx-post="/subscriptions/{{ sub.id }}/update"
+        hx-target="#row-{{ sub.id }}"
+        hx-swap="outerHTML"
+        hx-on:htmx:after-request="document.getElementById('edit-cell-{{ sub.id }}').innerHTML=''">
+    <div class="form-row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0">
+      <div class="form-group" style="min-width:120px">
+        <label class="form-label">Name</label>
+        <input class="input input-sm" name="display_name" value="{{ sub.display_name }}">
+      </div>
+      <div class="form-group" style="min-width:160px">
+        <label class="form-label">Measurement</label>
+        <input class="input input-sm" name="measurement" value="{{ sub.influxdb.measurement }}">
+      </div>
+      <div class="form-group" style="min-width:80px">
+        <label class="form-label">Field</label>
+        <input class="input input-sm" name="field_name" value="{{ sub.influxdb.field_name }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Interval</label>
+        <select class="select select-sm" name="interval_ms">
+          {% for ms, lbl in [(100,"100 ms"),(500,"500 ms"),(1000,"1 s"),(5000,"5 s"),(10000,"10 s"),(60000,"1 min"),(300000,"5 min"),(600000,"10 min")] %}
+          <option value="{{ ms }}" {% if sub.polling.interval_ms == ms %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Write Mode</label>
+        <select class="select select-sm" name="write_mode">
+          {% for m, lbl in [("always","Always"),("on_change","On change"),("on_change_absolute","Δ absolute"),("on_change_relative","Δ relative %")] %}
+          <option value="{{ m }}" {% if sub.polling.write_mode == m %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="min-width:80px">
+        <label class="form-label">Threshold</label>
+        <input class="input input-sm" type="number" name="threshold"
+               value="{{ sub.polling.threshold }}" step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Heartbeat</label>
+        <select class="select select-sm" name="heartbeat_interval_seconds">
+          {% for s, lbl in [(0,"Never"),(10,"10 s"),(60,"1 min"),(600,"10 min"),(3600,"1 h"),(86400,"1 d")] %}
+          <option value="{{ s }}" {% if sub.polling.heartbeat_interval_seconds == s %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="align-self:flex-end">
+        <button type="submit" class="btn btn-primary btn-xs">Save</button>
+        <button type="button" class="btn btn-ghost btn-xs"
+                onclick="document.getElementById('edit-cell-{{ sub.id }}').innerHTML=''">Cancel</button>
+      </div>
+    </div>
+  </form>
+</div>

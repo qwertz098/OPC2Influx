@@ -1,0 +1,15 @@
+{% if suggestion %}
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:6px 10px;background:var(--surface2,#f1f5f9);border-radius:6px;font-size:13px">
+  <span class="text-muted">Suggestion based on {{ total }} subscription{{ 's' if total != 1 else '' }}:</span>
+  <code class="mono" id="strip-suggestion-{{ server_id | slugify }}">{{ suggestion }}</code>
+  <button type="button" class="btn btn-primary btn-xs"
+          onclick="(function(){
+            var inp = document.querySelector('#strip-prefix-form-{{ server_id | slugify }} input[name=prefix]');
+            if(inp){ inp.value = '{{ suggestion | e }}'; inp.focus(); }
+          })()">Use this</button>
+</div>
+{% elif total == 0 %}
+<p class="text-xs text-muted" style="margin-bottom:6px">No subscriptions for this server yet — nothing to suggest.</p>
+{% else %}
+<p class="text-xs text-muted" style="margin-bottom:6px">No common prefix found across {{ total }} subscription{{ 's' if total != 1 else '' }}.</p>
+{% endif %}

@@ -1,0 +1,111 @@
+{% for node in nodes %}
+{# locked = this node sits on or under a dynamic-watcher folder — manual
+   (un)subscribing is disabled there to avoid fighting with the watcher #}
+{% set ns = namespace(locked=false) %}
+{% if dynamic_folder_paths is defined %}
+  {% for p in dynamic_folder_paths %}
+    {% if node.browse_path == p or node.browse_path.startswith(p ~ '/') %}{% set ns.locked = true %}{% endif %}
+  {% endfor %}
+{% endif %}
+<li class="node node--{{ node.node_class | lower }}" data-node-id="{{ node.node_id }}" data-server="{{ node.server_id }}">
+  <div class="node-header">
+
+    {% if node.node_class in ("Object", "View") or (node.node_class == "Variable" and node.has_children) %}
+    <!-- Folder node (or a structured Variable exposing its members as browsable
+         children, e.g. a PLC struct) — expand toggle first, then tri-state checkbox -->
+    {% set has_subs = subscribed_ancestor_paths is defined and node.browse_path in subscribed_ancestor_paths %}
+    {% set is_dynamic = dynamic_folder_paths is defined and node.browse_path in dynamic_folder_paths %}
+
+    {% if node.has_children %}
+    <button class="node-toggle"
+            hx-get="/browser/nodes/{{ node.server_id }}/{{ node.node_id | urlencode }}"
+            hx-vals='{"parent_path": "{{ node.browse_path }}"}'
+            hx-target="#children-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            hx-indicator="#ind-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
+            onclick="onToggleClick(this)"
+            aria-label="Expand {{ node.display_name }}">
+      ▶
+    </button>
+    {% else %}
+    <span class="node-toggle-placeholder"></span>
+    {% endif %}
+
+    <input type="checkbox"
+           class="node-checkbox folder-checkbox{% if is_dynamic %} subscribed--dyn{% endif %}"
+           data-node-id="{{ node.node_id }}"
+           data-path="{{ node.browse_path }}"
+           {% if has_subs %}data-has-subs="1"{% endif %}
+           {% if ns.locked %}checked disabled data-dyn-locked="1"
+           title="Managed by a dynamic folder watcher — release the watcher (✕⟳) to change subscriptions manually"
+           {% else %}onchange="onFolderCheckChange(this)"
+           title="Empty: click to subscribe all children · Partial or full: click to unsubscribe all"{% endif %}>
+
+    <span class="node-icon">📁</span>
+    <span class="node-name">{{ node.display_name }}</span>
+    {% if has_subs %}<span class="sub-hint" title="Contains subscriptions">●</span>{% endif %}
+    <span class="node-class text-muted text-xs">{{ node.node_class }}</span>
+    <span class="htmx-indicator spinner" id="ind-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}">⟳</span>
+    <span id="dynbadge-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}">
+      {% if is_dynamic %}<span class="badge badge-dyn dyn-pill" title="Dynamic — auto-syncs new/removed nodes">⟳ auto</span>{% endif %}
+    </span>
+    <button class="btn-dyn-folder {% if is_dynamic %}btn-dyn-folder--active{% endif %}"
+            data-server-id="{{ node.server_id | e }}"
+            data-node-id="{{ node.node_id | e }}"
+            data-browse-path="{{ node.browse_path | e }}"
+            data-display-name="{{ node.display_name | e }}"
+            data-was-dynamic="{{ 'true' if is_dynamic else 'false' }}"
+            data-target="dynbadge-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
+            onclick="onDynFolderClick(this)"
+            title="{{ 'Remove dynamic subscription watcher' if is_dynamic else 'Subscribe dynamically — auto-add new nodes, disable removed ones' }}">{{ '✕⟳' if is_dynamic else '⟳' }}</button>
+
+    {% elif node.node_class == "Variable" %}
+    <!-- Variable node: immediate subscribe/unsubscribe -->
+    <span class="node-toggle-placeholder"></span>
+    {% set sub_id = subscribed_map.get(node.node_id) if subscribed_map is defined else none %}
+    {% set subscribed = sub_id is not none %}
+    {% set is_dyn = subscribed and dynamic_sub_node_ids is defined and node.node_id in dynamic_sub_node_ids %}
+    <span class="var-subscribe-wrap" id="vsw-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}">
+    <input type="checkbox"
+           class="node-checkbox variable-checkbox{% if is_dyn %} subscribed--dyn{% elif subscribed %} subscribed{% endif %}"
+           {% if subscribed %}checked{% endif %}
+           {% if ns.locked %}disabled data-dyn-locked="1"
+           title="Managed by a dynamic folder watcher — release the watcher (✕⟳) on the folder to change subscriptions manually"
+           {% else %}hx-post="/browser/{% if subscribed %}unsubscribe{% else %}subscribe{% endif %}"
+           hx-vals='{"node_id": "{{ node.node_id | e }}", "server_id": "{{ node.server_id | e }}", "browse_path": "{{ node.browse_path | e }}", "display_name": "{{ node.display_name | e }}"{% if subscribed %}, "sub_id": "{{ sub_id }}"{% endif %}}'
+           hx-target="#vsw-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
+           hx-swap="outerHTML"
+           onchange="onVariableCheckChange(this)"{% endif %}
+           data-server="{{ node.server_id }}"
+           data-path="{{ node.browse_path }}"
+           data-name="{{ node.display_name }}">
+    <span class="node-icon">📊</span>
+    <span class="node-name{% if is_dyn %} subscribed-name--dyn{% elif subscribed %} subscribed-name{% endif %}">{{ node.display_name }}</span>
+    {% if is_dyn %}<span class="subscribe-badge subscribe-badge--dyn" title="Auto-managed by a dynamic folder watcher — manual removal is undone on the next rescan">⟳</span>
+    {% elif subscribed %}<span class="subscribe-badge">✓</span>{% endif %}
+    {% if node.data_type %}
+    <span class="badge badge-dtype badge-dtype--{{ node.data_type | lower }}">{{ node.data_type }}</span>
+    {% endif %}
+    {% if node.value is not none %}
+    <span class="node-value mono">{{ node.value }}</span>
+    {% endif %}
+    <span class="subscribe-spinner htmx-indicator spinner">⟳</span>
+    </span>
+
+    {% else %}
+    <!-- Other node types: no checkbox -->
+    <span class="node-toggle-placeholder"></span>
+    <span class="node-icon">🔷</span>
+    <span class="node-name text-muted">{{ node.display_name }}</span>
+    <span class="node-class text-xs text-muted">{{ node.node_class }}</span>
+    {% endif %}
+
+  </div>
+
+  {% if (node.node_class in ("Object", "View") or node.node_class == "Variable") and node.has_children %}
+  <ul class="node-children" id="children-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"></ul>
+  {% endif %}
+
+</li>
+{% endfor %}

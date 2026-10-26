@@ -1,0 +1,40 @@
+<div class="card mb-2 mt-1" id="stale-edit-{{ rule.id }}" style="margin-left:1rem">
+  <div class="card-body" style="padding:.75rem">
+    <form action="/config/stale-watchdog/{{ rule.id }}/update" method="post">
+      <div class="form-row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="flex:2;min-width:200px">
+          <label class="form-label">Signal</label>
+          <input class="input" type="text" name="subscription_id"
+                 value="{{ rule.subscription_id }}" required>
+        </div>
+        <div class="form-group" style="flex:0 0 110px">
+          <label class="form-label">Window</label>
+          <select class="select" name="window_ms">
+            {% for ms, lbl in [(100,"100 ms"),(500,"500 ms"),(1000,"1 s"),(5000,"5 s"),(10000,"10 s"),(60000,"1 min"),(300000,"5 min"),(600000,"10 min")] %}
+            <option value="{{ ms }}" {% if rule.window_ms == ms %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="input" type="text" name="name" value="{{ rule.name }}">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:4px">
+          <label class="checkbox-label">
+            <input type="checkbox" name="suppress_on_disconnect" value="true" {% if rule.suppress_on_disconnect %}checked{% endif %}>
+            Suppress when server disconnected
+          </label>
+          <label class="checkbox-label" style="margin-top:4px">
+            <input type="checkbox" name="send_email" value="true" {% if rule.send_email %}checked{% endif %}>
+            Send email
+          </label>
+        </div>
+        <div class="form-actions" style="align-self:flex-end">
+          <button type="submit" class="btn btn-primary btn-xs">Save</button>
+          <button type="button" class="btn btn-ghost btn-xs"
+                  onclick="document.getElementById('stale-edit-cell-{{ rule.id }}').innerHTML=''">Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>

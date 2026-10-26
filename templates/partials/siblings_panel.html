@@ -1,0 +1,38 @@
+<div class="card" id="siblings-panel">
+  <div class="card-header">
+    Apply to siblings
+    <button class="btn btn-ghost btn-xs float-right" onclick="document.getElementById('siblings-panel').innerHTML=''">✕</button>
+  </div>
+  <div class="card-body">
+    {% if siblings %}
+    <p>Found <strong>{{ siblings | length }}</strong> sibling instance{{ 's' if siblings | length != 1 }}:</p>
+    <ul class="sibling-list">
+      {% for sib in siblings %}
+      <li>
+        <span class="mono text-sm">{{ sib.browse_name }}</span>
+        <span class="text-muted text-xs">{{ sib.node_id }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="text-muted text-sm mt-2">
+      The instance BrowseName will be added as an <code>instance</code> tag automatically.
+      Configure once — applied to all.
+    </p>
+    <form action="/subscription-groups/from-siblings" method="post"
+          hx-post="/subscription-groups/from-siblings"
+          hx-target="#siblings-panel"
+          hx-swap="outerHTML">
+      {% for sib in siblings %}
+      <input type="hidden" name="sibling_node_id" value="{{ sib.node_id }}">
+      <input type="hidden" name="sibling_name" value="{{ sib.browse_name }}">
+      {% endfor %}
+      <input type="hidden" name="server_id" value="{{ server_id }}">
+      <input type="hidden" name="parent_node_id" value="{{ siblings[0].node_id if siblings else '' }}">
+      <input type="hidden" name="child_names" value="{{ child_names | join(',') }}">
+      <button type="submit" class="btn btn-primary mt-3">Configure Group →</button>
+    </form>
+    {% else %}
+    <p class="text-muted">No matching siblings found.</p>
+    {% endif %}
+  </div>
+</div>

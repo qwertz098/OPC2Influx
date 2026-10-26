@@ -1,0 +1,61 @@
+{% for t in targets %}
+{% set status = sqlite_status.get(t.id) %}
+<tr class="{% if not t.enabled %}opacity-50{% endif %}">
+  <td>{{ t.display_name }}</td>
+  <td class="mono text-sm">{{ t.file_path }}</td>
+  <td class="text-sm">{{ t.write_interval_seconds }} s</td>
+  <td>
+    {% if not t.enabled %}
+    <span class="badge badge-warn">Disabled</span>
+    {% elif status and status.last_error %}
+    <span class="badge badge-error" title="{{ status.last_error }}">Error</span>
+    {% elif status and status.last_write %}
+    <span class="badge badge-ok">Writing</span>
+    {% else %}
+    <span class="badge badge-info">Ready</span>
+    {% endif %}
+  </td>
+  <td class="text-center">
+    {% if status %}{{ status.rows_written }}{% else %}—{% endif %}
+  </td>
+  <td class="text-sm">
+    {% if status and status.last_write %}{{ status.last_write | format_dt }}{% else %}—{% endif %}
+  </td>
+  <td class="actions">
+    <button type="button" class="btn btn-ghost btn-xs"
+            onclick="toggleEditRow('sqlite-edit-{{ t.id }}')">Edit</button>
+    <form action="/config/sqlite/{{ t.id }}/toggle" method="post" style="display:inline">
+      <button class="btn btn-ghost btn-xs">{{ 'Disable' if t.enabled else 'Enable' }}</button>
+    </form>
+    <form action="/config/sqlite/{{ t.id }}/delete" method="post" style="display:inline"
+          onsubmit="return confirm('Remove this SQLite target?')">
+      <button class="btn btn-danger btn-xs">Remove</button>
+    </form>
+  </td>
+</tr>
+<tr id="sqlite-edit-{{ t.id }}" style="display:none">
+  <td colspan="7" style="padding:8px 12px;background:#f8fafc;border-top:none">
+    <form action="/config/sqlite/{{ t.id }}/update" method="post">
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="input input-sm" type="text" name="display_name" value="{{ t.display_name }}" required style="min-width:140px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">File Path</label>
+          <input class="input input-sm" type="text" name="file_path" value="{{ t.file_path }}" required style="min-width:200px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Interval (s)</label>
+          <input class="input input-sm" type="number" name="write_interval_seconds" value="{{ t.write_interval_seconds }}" min="1" required style="width:80px">
+        </div>
+        <div class="form-group" style="align-self:flex-end">
+          <button type="submit" class="btn btn-primary btn-xs">Save</button>
+          <button type="button" class="btn btn-ghost btn-xs"
+                  onclick="toggleEditRow('sqlite-edit-{{ t.id }}')">Cancel</button>
+        </div>
+      </div>
+    </form>
+  </td>
+</tr>
+{% endfor %}

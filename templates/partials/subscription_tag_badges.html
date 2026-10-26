@@ -1,0 +1,26 @@
+<span id="tag-badges-{{ sub.id }}" class="tag-badges">
+  {%- for activation in sub.active_tags -%}
+    {%- set tag = all_tags.get(activation.tag_id) -%}
+    {%- if tag -%}
+      {%- set resolved = tag_cache.get(sub.id, {}).get(tag.id, '') -%}
+      <button class="btn btn-xs tag-pill {% if activation.active %}tag-pill--active{% else %}tag-pill--inactive{% endif %}"
+              hx-post="/subscriptions/{{ sub.id }}/toggle-tag/{{ tag.id }}"
+              hx-target="#tag-badges-{{ sub.id }}"
+              hx-swap="outerHTML"
+              title="{% if tag.is_dynamic %}key={{ tag.key }}{% if resolved %} → {{ resolved }}{% else %} (unresolved){% endif %}{% else %}{{ tag.key }}={{ tag.static_value }}{% endif %}">
+        {% if tag.is_dynamic %}<em>{{ tag.short_name }}</em>{% else %}{{ tag.short_name }}{% endif %}
+      </button>
+    {%- endif -%}
+  {%- endfor -%}
+  {%- for tag in all_tags.values() -%}
+    {%- if not sub.active_tags or not (sub.active_tags | selectattr('tag_id', 'equalto', tag.id) | list) -%}
+      <button class="btn btn-xs tag-pill tag-pill--inactive"
+              hx-post="/subscriptions/{{ sub.id }}/toggle-tag/{{ tag.id }}"
+              hx-target="#tag-badges-{{ sub.id }}"
+              hx-swap="outerHTML"
+              title="{{ tag.key }}{% if tag.is_dynamic %} (dynamic){% else %}={{ tag.static_value }}{% endif %}">
+        {% if tag.is_dynamic %}<em>{{ tag.short_name }}</em>{% else %}{{ tag.short_name }}{% endif %}
+      </button>
+    {%- endif -%}
+  {%- endfor -%}
+</span>

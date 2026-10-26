@@ -1,0 +1,77 @@
+<td colspan="7" style="padding: 0;">
+  <div class="card" style="margin: 4px 0; border-radius: 6px;">
+    <div class="card-body">
+      <form action="/config/influxdb/{{ t.id }}/update" method="post">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input class="input" type="text" name="display_name" value="{{ t.display_name }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">URL</label>
+            <input class="input" type="text" name="url" value="{{ t.url }}" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Token</label>
+            <select class="select" name="token_source" onchange="var g=this.closest('.form-group');g.querySelector('.token-direct').style.display=this.value==='direct'?'':'none';g.querySelector('.token-env').style.display=this.value==='env'?'':'none'">
+              <option value="direct" {% if not t.token.startswith('${') %}selected{% endif %}>Direct token</option>
+              <option value="env" {% if t.token.startswith('${') %}selected{% endif %}>Environment variable</option>
+            </select>
+            <input class="input token-direct" type="password" name="token" placeholder="Leave blank to keep current" autocomplete="off" style="margin-top:4px;{% if t.token.startswith('${') %}display:none{% endif %}">
+            <input class="input token-env" type="text" name="token_env_var" value="{% if t.token.startswith('${') %}{{ t.token[2:-1] }}{% endif %}" placeholder="INFLUXDB_TOKEN" autocomplete="off" style="margin-top:4px;{% if not t.token.startswith('${') %}display:none{% endif %}">
+            <span class="form-hint">Direct tokens are stored in plaintext in config/influxdb.yaml.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Organization</label>
+            <input class="input" type="text" name="org" value="{{ t.org }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bucket</label>
+            <input class="input" type="text" name="bucket" value="{{ t.bucket }}" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Mode</label>
+            <select class="select" name="mode">
+              <option value="always" {% if t.mode == 'always' %}selected{% endif %}>Always (fan-out)</option>
+              <option value="failover" {% if t.mode == 'failover' %}selected{% endif %}>Failover</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Priority</label>
+            <input class="input input-sm" type="number" name="priority" value="{{ t.priority }}" min="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Batch Size</label>
+            <input class="input input-sm" type="number" name="batch_size" value="{{ t.batch.size }}" min="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Flush Interval (ms)</label>
+            <input class="input input-sm" type="number" name="flush_interval_ms" value="{{ t.batch.flush_interval_ms }}" min="100">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Max Retries</label>
+            <input class="input input-sm" type="number" name="max_retries" value="{{ t.batch.max_retries }}" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+              <input type="checkbox" name="type_suffix" value="1" {% if t.type_suffix %}checked{% endif %}>
+              Type-safe field names
+            </label>
+            <span class="form-hint">Appends the data type to each field name (e.g. <code>value_float</code>, <code>value_bool</code>). Use as a fallback if InfluxDB schema conflicts occur between different data types writing to the same field.</span>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-ghost"
+                  onclick="var r=document.getElementById('edit-{{ t.id | slugify }}');r.innerHTML='';r.style.display='none'">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</td>

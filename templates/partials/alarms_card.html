@@ -1,0 +1,47 @@
+<div id="events-card" class="card mt-4"
+     hx-get="/dashboard/alarms"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML">
+  <div class="card-header" style="justify-content:space-between">
+    <span>Events</span>
+    <span style="display:flex;align-items:center;gap:.5rem">
+      {% if active_alarms %}
+      <span class="badge badge-error">{{ active_alarms | length }}</span>
+      {% endif %}
+      <button type="button" title="Clear events"
+              hx-post="/dashboard/alarms/clear"
+              hx-target="#events-card"
+              hx-swap="outerHTML"
+              style="background:none;border:none;cursor:pointer;padding:2px 4px;color:var(--text-muted,#888);line-height:1"
+              onmouseover="this.style.color='var(--text,#333)'" onmouseout="this.style.color='var(--text-muted,#888)'">
+        🗑
+      </button>
+    </span>
+  </div>
+  <div class="card-body" style="padding:0">
+    {% if active_alarms %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:160px">Time</th>
+          <th style="width:80px">Level</th>
+          <th style="width:140px">Source</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alarm in active_alarms | reverse %}
+        <tr>
+          <td class="mono text-sm">{{ alarm.timestamp | format_dt }}</td>
+          <td><span class="badge badge-{{ alarm.level }}">{{ alarm.level }}</span></td>
+          <td class="mono text-sm">{{ alarm.source }}</td>
+          <td>{{ alarm.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted" style="padding:16px">No entries.</p>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,14 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+asyncua>=1.1.0
+influxdb-client[async]>=1.43.0
+aiosmtplib>=3.0.0
+jinja2>=3.1.4
+python-multipart>=0.0.9
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+pyyaml>=6.0.1
+aiofiles>=23.2.1
+aiosqlite>=0.20.0
+markdown>=3.6
+openpyxl>=3.1.0

@@ -1,0 +1,27 @@
+<td colspan="7" style="padding: 0;">
+  <div class="card" style="margin: 4px 0; border-radius: 6px;">
+    <div class="card-body">
+      <form action="/config/sqlite/{{ t.id }}/update" method="post">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input class="input" type="text" name="display_name" value="{{ t.display_name }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">File Path</label>
+            <input class="input" type="text" name="file_path" value="{{ t.file_path }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Write Interval (s)</label>
+            <input class="input input-sm" type="number" name="write_interval_seconds" value="{{ t.write_interval_seconds }}" min="1" required style="width:100px">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-ghost"
+                  onclick="var r=document.getElementById('edit-{{ t.id | slugify }}');r.innerHTML='';r.style.display='none'">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</td>

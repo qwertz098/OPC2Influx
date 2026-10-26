@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Opc2Influx{% endblock %}{% if site_name %} — {{ site_name }}{% endif %}</title>
+  <script src="/static/vendor/htmx@2.0.4.min.js" defer></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ app_version }}">
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <img src="/static/favicon.svg" alt="" style="width:28px;height:28px;border-radius:5px;flex-shrink:0">
+    <span class="navbar-title">OpcUA → InfluxDB</span>
+  </div>
+  <div class="navbar-links">
+    <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+    <a href="/browser" class="nav-link {% if request.url.path.startswith('/browser') %}active{% endif %}">Browser</a>
+    <a href="/subscriptions" class="nav-link {% if request.url.path.startswith('/subscriptions') %}active{% endif %}">Subscriptions</a>
+    <a href="/chart" class="nav-link {% if request.url.path.startswith('/chart') %}active{% endif %}">Chart</a>
+    <div class="nav-divider"></div>
+    <a href="/config/servers" class="nav-link {% if request.url.path.startswith('/config/servers') %}active{% endif %}">Servers</a>
+    <a href="/config/influxdb" class="nav-link {% if request.url.path.startswith('/config/influxdb') %}active{% endif %}">InfluxDB</a>
+    <a href="/config/sqlite" class="nav-link {% if request.url.path.startswith('/config/sqlite') %}active{% endif %}">SQLite</a>
+    <a href="/config/tags" class="nav-link {% if request.url.path.startswith('/config/tags') %}active{% endif %}">Tags</a>
+    <a href="/config/alerts" class="nav-link {% if request.url.path.startswith('/config/alerts') or request.url.path.startswith('/config/alarm-rules') %}active{% endif %}">Alerts</a>
+
+    <a href="/config/settings" class="nav-link {% if request.url.path == '/config/settings' %}active{% endif %}">Settings</a>
+    <a href="/help" class="nav-link {% if request.url.path == '/help' %}active{% endif %}" style="margin-left:auto" title="Help">?</a>
+  </div>
+</nav>
+
+<main class="main-content">
+  {% block content %}{% endblock %}
+</main>
+
+<div id="toast" class="toast" aria-live="polite"></div>
+
+<script src="/static/js/app.js?v={{ app_version }}" defer></script>
+</body>
+</html>

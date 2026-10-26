@@ -1,0 +1,230 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+
+<!-- Dynamic Folder Watchers -->
+<div class="page-header" style="margin-bottom:.5rem">
+  <h1>Dynamic Folder Watchers</h1>
+</div>
+<div class="card mb-3">
+  <div class="card-body text-sm text-muted">
+    Dynamic folders are auto-scanned: new child nodes get subscriptions, nodes that vanish are disabled, and re-enable if the node returns.
+    Create watchers from the <a href="/browser">OPC UA Browser</a> by clicking <strong>⟳</strong> on any folder row.
+  </div>
+</div>
+
+{% if folders %}
+<div class="card mb-4">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Folder</th>
+        <th>Server</th>
+        <th>Rescan Interval</th>
+        <th>Managed Subs</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in folders %}
+      <tr class="{% if not f.enabled %}opacity-50{% endif %}">
+        <td>
+          <span class="mono text-sm">{{ f.folder_browse_path }}</span>
+          {% if f.display_name and f.display_name != f.folder_browse_path %}
+          <br><span class="text-xs text-muted">{{ f.display_name }}</span>
+          {% endif %}
+        </td>
+        <td class="text-sm text-muted">{{ server_map.get(f.server_id, f.server_id) }}</td>
+        <td>
+          <form action="/config/dynamic-folders/{{ f.id }}/interval" method="post"
+                style="display:flex;gap:4px;align-items:center">
+            <input class="input input-sm" type="number" name="rescan_interval_seconds"
+                   value="{{ f.rescan_interval_seconds }}" min="15" style="width:70px">
+            <span class="text-xs text-muted">s</span>
+            <button class="btn btn-ghost btn-xs">Save</button>
+          </form>
+        </td>
+        <td class="text-center">{{ managed_counts.get(f.id, 0) }}</td>
+        <td>
+          <span class="badge {% if f.enabled %}badge-dyn{% else %}badge-mode{% endif %}">
+            {{ '⟳ Active' if f.enabled else 'Disabled' }}
+          </span>
+        </td>
+        <td>
+          <div class="actions">
+            <form action="/config/dynamic-folders/{{ f.id }}/scan" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs" title="Rescan now, without waiting for the rescan interval">⟳ Scan now</button>
+            </form>
+            <form action="/config/dynamic-folders/{{ f.id }}/toggle" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs">{{ 'Disable' if f.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/config/dynamic-folders/{{ f.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirmDynDelete(this, {{ managed_counts.get(f.id, 0) }})">
+              <input type="hidden" name="delete_subs" value="0">
+              <button class="btn btn-danger btn-xs">Remove</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card mb-4">
+  <div class="card-body text-center text-muted">
+    No dynamic folder watchers configured. Open the <a href="/browser">Browser</a> and click <strong>⟳</strong> on any folder.
+  </div>
+</div>
+{% endif %}
+
+<script>
+function confirmDynDelete(form, count) {
+  if (!confirm('Remove this dynamic folder watcher?')) return false;
+  if (count > 0) {
+    var del = confirm('Also delete the ' + count + ' managed subscription(s)?');
+    form.querySelector('[name=delete_subs]').value = del ? '1' : '0';
+  }
+  return true;
+}
+</script>
+
+<div class="page-header mt-4">
+  <h1>Active Subscriptions</h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn btn-ghost"
+            hx-get="/subscriptions/stale"
+            hx-target="#stale-panel"
+            hx-swap="innerHTML"
+            hx-indicator="#stale-spinner"
+            hx-disabled-elt="this">
+      Check for stale
+    </button>
+    <span id="stale-spinner" class="htmx-indicator text-sm text-muted">
+      <span style="display:inline-block;animation:spin 1s linear infinite">⟳</span>
+      Checking subscriptions…
+    </span>
+    <a class="btn btn-ghost" href="/subscriptions/export">Export Excel</a>
+    {% set dyn_count = subscriptions | selectattr('source_folder_id') | list | length %}
+    {% set manual_count = subscriptions | length - dyn_count %}
+    {% if dyn_count %}
+    <form action="/subscriptions/delete-all-dynamic" method="post" style="display:inline"
+          onsubmit="return confirm('Delete all {{ dyn_count }} dynamically managed subscriptions?\n\nNote: enabled folder watchers will re-create them on their next rescan — remove or disable the watchers first if they should stay gone.')">
+      <button class="btn btn-danger btn-sm">Delete dynamic ({{ dyn_count }})</button>
+    </form>
+    {% endif %}
+    {% if manual_count %}
+    <form action="/subscriptions/delete-all-manual" method="post" style="display:inline"
+          onsubmit="return confirm('Delete all {{ manual_count }} manual subscriptions?\n\nThis cannot be undone.')">
+      <button class="btn btn-danger btn-sm">Delete manual ({{ manual_count }})</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+<div id="stale-panel"></div>
+
+{% if subscriptions %}
+<div class="card">
+  <div style="overflow-x:auto">
+  <table class="table table-fixed">
+    <colgroup>
+      <col style="width:13%"> <!-- Name -->
+      <col style="width:7%">  <!-- Server -->
+      <col style="width:14%"> <!-- Node ID -->
+      <col style="width:21%"> <!-- Measurement -->
+      <col style="width:5%">  <!-- Interval -->
+      <col style="width:7%">  <!-- Write Mode -->
+      <col style="width:6%">  <!-- Heartbeat -->
+      <col style="width:9%">  <!-- Tags -->
+      <col style="width:5%">  <!-- Status -->
+      <col style="width:13%"> <!-- Actions -->
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Server</th>
+        <th>Node ID</th>
+        <th>Measurement</th>
+        <th>Interval</th>
+        <th>Write Mode</th>
+        <th>Heartbeat</th>
+        <th>Tags</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sub in subscriptions %}
+      <tr id="row-{{ sub.id }}" class="{% if not sub.enabled %}opacity-50{% endif %}">
+        <td>
+          {{ sub.display_name or sub.node_id }}
+          {% if sub.source_folder_id and sub.source_folder_id in folder_map %}
+          <br><span class="badge badge-dyn text-xs" style="font-size:.65rem"
+                title="Managed by dynamic folder: {{ folder_map[sub.source_folder_id].folder_browse_path }}">⟳ dynamic</span>
+          {% endif %}
+        </td>
+        <td class="text-sm text-muted">{{ server_map.get(sub.server_id, sub.server_id) }}</td>
+        <td class="mono text-xs">{{ sub.node_id }}</td>
+        <td class="mono text-sm" title="{{ sub.influxdb.measurement }}">{{ stripped_measurements.get(sub.id, sub.influxdb.measurement) }}</td>
+        <td class="text-sm">{{ interval_label(sub.polling.interval_ms) }}</td>
+        <td class="text-sm">
+          {{ sub.polling.write_mode }}
+          {% if sub.polling.threshold %}<span class="text-muted">({{ sub.polling.threshold }})</span>{% endif %}
+        </td>
+        <td class="text-sm">{{ heartbeat_label(sub.polling.heartbeat_interval_seconds) }}</td>
+        <td>
+          {% include "partials/subscription_tag_badges.html" %}
+        </td>
+        <td>
+          <span class="badge {% if sub.enabled %}badge-ok{% else %}badge-mode{% endif %}">
+            {{ 'Active' if sub.enabled else 'Disabled' }}
+          </span>
+          {% if sub.enabled %}
+          {% set status = server_status.get(sub.server_id) %}
+          {% if not (status and status.connected) %}
+          <br><span class="status-dot dot-red" style="margin-top:4px" title="Server offline{% if status and status.last_error %}: {{ status.last_error }}{% endif %}"></span>
+          <span class="text-xs text-red">Offline</span>
+          {% endif %}
+          {% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            <button class="btn btn-ghost btn-xs"
+                    hx-get="/subscriptions/{{ sub.id }}/edit"
+                    hx-target="#edit-cell-{{ sub.id }}"
+                    hx-swap="innerHTML">Edit</button>
+            <form action="/subscriptions/{{ sub.id }}/toggle" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs">{{ 'Disable' if sub.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/subscriptions/{{ sub.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirm('Delete this subscription?')">
+              <button class="btn btn-danger btn-xs">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      <tr class="edit-row" style="display:none"><td id="edit-cell-{{ sub.id }}" colspan="10"></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center text-muted">
+    <p>No subscriptions yet.</p>
+    <a href="/browser" class="btn btn-primary mt-2">Browse OPC UA tags →</a>
+  </div>
+</div>
+{% endif %}
+<script>
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  var t = e.detail.target;
+  if (t && t.id && t.id.startsWith('edit-cell-')) {
+    t.closest('tr').style.display = t.innerHTML.trim() ? '' : 'none';
+  }
+});
+</script>
+{% endblock %}

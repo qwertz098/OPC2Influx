@@ -1,0 +1,160 @@
+<div hx-get="/status" hx-trigger="every 5s" hx-swap="outerHTML">
+{% macro fmt_bytes(b) %}{% if b >= 1073741824 %}{{ "%.1f GB"|format(b/1073741824) }}{% elif b >= 1048576 %}{{ "%.1f MB"|format(b/1048576) }}{% elif b >= 1024 %}{{ "%.0f KB"|format(b/1024) }}{% else %}{{ b }} B{% endif %}{% endmacro %}
+<div class="status-grid">
+
+  <!-- OPC UA Servers -->
+  <div class="card">
+    <div class="card-header">OPC UA Servers</div>
+    <div class="card-body">
+      {% for srv in servers %}
+      {% set status = server_status.get(srv.id) %}
+      <div class="status-row">
+        <span class="status-dot {% if status and status.connected %}dot-green{% else %}dot-red{% endif %}"></span>
+        <span class="status-name">{{ srv.display_name }}</span>
+        <span class="status-url text-muted text-sm mono">{{ srv.endpoint_url }}</span>
+        {% if status and not status.connected and status.last_error %}
+        <span class="status-error text-red text-xs">{{ status.last_error }}</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="text-muted">No servers configured. <a href="/config/servers">Add one →</a></p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- InfluxDB Targets -->
+  <div class="card">
+    <div class="card-header">InfluxDB Targets</div>
+    <div class="card-body">
+      {% for t in targets %}
+      {% set status = influx_status.get(t.id) %}
+      <div class="status-row">
+        <span class="status-dot {% if status and status.connected %}dot-green{% else %}dot-red{% endif %}"></span>
+        <span class="status-name">{{ t.display_name }}</span>
+        <span class="badge badge-mode">{{ t.mode }}</span>
+        {% if status %}
+        {% set pts = status.writes_total + status.writes_partial %}
+        {% set est = status.bytes_estimated %}
+        {% set bpd = influx_bytes_per_day.get(t.id) if influx_bytes_per_day is defined else none %}
+        <span class="status-url text-muted text-xs">{{ pts }}/{{ status.writes_attempted }} points written{% if status.writes_partial %} ({{ status.writes_partial }} with field conflicts){% endif %}{% if est > 0 %} · ~{{ fmt_bytes(est) }}{% if bpd %} (~{{ fmt_bytes(bpd) }}/day){% endif %}{% endif %}</span>
+        {% if status.last_write %}
+        <span class="status-url text-muted text-xs">last: {{ status.last_write | format_dt }}</span>
+        {% endif %}
+        {% endif %}
+        <span class="status-url text-muted text-sm mono">{{ t.url }}<a href="{{ t.url }}" target="_blank" rel="noopener" title="Open in browser" style="margin-left:6px;color:var(--muted);text-decoration:none;font-size:11px">↗</a></span>
+        {% if status and status.last_error %}
+        <span class="status-error text-red text-xs">{{ status.last_error }}</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="text-muted">No targets configured. <a href="/config/influxdb">Add one →</a></p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- SQLite Files -->
+  {% if sqlite_targets %}
+  <div class="card">
+    <div class="card-header">SQLite Files</div>
+    <div class="card-body">
+      {% for t in sqlite_targets %}
+      {% set sz = sqlite_file_sizes.get(t.id) %}
+      {% set st = sqlite_status.get(t.id) if sqlite_status is defined else none %}
+      <div class="status-row">
+        <span class="status-dot {% if t.enabled %}dot-green{% else %}dot-red{% endif %}"></span>
+        <span class="status-name">{{ t.display_name }}</span>
+        {% if st %}
+        {% set total = sqlite_total_rows.get(t.id) if sqlite_total_rows is defined else none %}
+        {% set bpd = sqlite_bytes_per_day.get(t.id) if sqlite_bytes_per_day is defined else none %}
+        <span class="status-url text-muted text-xs">{{ st.rows_written }} rows written{% if total is not none %} · {{ total }} total{% endif %}{% if bpd %} (~{{ fmt_bytes(bpd) }}/day){% endif %}</span>
+        {% if st.last_write %}
+        <span class="status-url text-muted text-xs">last: {{ st.last_write | format_dt }}</span>
+        {% endif %}
+        {% endif %}
+        <span class="status-url text-muted text-sm mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.file_path }}</span>
+        <span class="text-sm text-muted" style="margin-left:auto;white-space:nowrap;flex-shrink:0">
+          {% if sz is not none %}
+            {% if sz >= 1073741824 %}{{ "%.1f"|format(sz/1073741824) }} GB
+            {% elif sz >= 1048576 %}{{ "%.1f"|format(sz/1048576) }} MB
+            {% elif sz >= 1024 %}{{ "%.1f"|format(sz/1024) }} KB
+            {% else %}{{ sz }} B{% endif %}
+          {% else %}—{% endif %}
+        </span>
+      </div>
+      {% else %}
+      <p class="text-muted">No SQLite targets. <a href="/config/sqlite">Configure →</a></p>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Summary -->
+  <div class="card">
+    <div class="card-header">Activity</div>
+    <div class="card-body">
+      <div class="stat-row">
+        <span class="stat-label">Active subscriptions</span>
+        <span class="stat-value">{{ subs_count }}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Active alarms</span>
+        <span class="stat-value {% if active_alarms %}text-red{% endif %}">{{ active_alarms | length }}</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% set all_conflicts = [] %}
+{% for t in targets %}
+  {% set status = influx_status.get(t.id) %}
+  {% if status and status.schema_conflicts %}
+    {% for c in status.schema_conflicts %}
+      {% set _ = all_conflicts.append((t.id, t.display_name, c)) %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+{% if all_conflicts %}
+<div class="card mt-4" style="border-left:3px solid #b45309">
+  <div class="card-header" style="color:#b45309">Error Log — InfluxDB Field Type Conflicts</div>
+  <div class="card-body" style="padding:0">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Target</th>
+          <th>Measurement · Field</th>
+          <th>Input type</th>
+          <th>Stored type</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for target_id, target_name, c in all_conflicts %}
+        {% set parts = c.split(' (') %}
+        {% set mf = parts[0] %}
+        {% set types = parts[1].rstrip(')').split(', ') if parts|length > 1 else ['', ''] %}
+        {% set got = types[0].replace('input: ', '') if types|length > 0 else '' %}
+        {% set stored = types[1].replace('stored: ', '') if types|length > 1 else '' %}
+        <tr>
+          <td class="text-sm">{{ target_name }}</td>
+          <td class="mono text-sm">{{ mf }}</td>
+          <td class="mono text-sm" style="color:#b45309">{{ got }}</td>
+          <td class="mono text-sm">{{ stored }}</td>
+          <td>
+            <form action="/config/influxdb/{{ target_id }}/clear-conflict" method="post" style="display:inline">
+              <input type="hidden" name="conflict" value="{{ c }}">
+              <button class="btn btn-ghost btn-xs" title="Dismiss this conflict (once the field is fixed in InfluxDB)">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-xs text-muted" style="padding:8px 16px">
+      Fix: delete the conflicting field in InfluxDB (Data Explorer → Delete Data, filter by measurement and field name). Then dismiss the entry here. The field will be re-created with the correct type on the next write.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+</div>

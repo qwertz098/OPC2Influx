@@ -1,0 +1,67 @@
+<div class="card" id="siblings-panel">
+  <div class="card-header">Configure Subscription Group</div>
+  <div class="card-body">
+    <form action="/subscription-groups" method="post">
+      <input type="hidden" name="server_id" value="{{ server_id }}">
+      <input type="hidden" name="parent_node_id" value="{{ parent_node_id }}">
+      <input type="hidden" name="child_browse_names" value="{{ child_names | join(',') }}">
+
+      <div class="form-group">
+        <label class="form-label">Group Name</label>
+        <input class="input" type="text" name="display_name" value="Auto Group" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">InfluxDB Measurement</label>
+        <input class="input" type="text" name="measurement" value="opcua_value" required>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Field Name</label>
+          <input class="input" type="text" name="field_name" value="value">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instance Tag Key</label>
+          <input class="input" type="text" name="instance_tag_key" value="instance">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Poll Interval</label>
+          <select class="select" name="interval_ms">
+            <option value="100">100 ms</option>
+            <option value="500">500 ms</option>
+            <option value="1000" selected>1 s</option>
+            <option value="5000">5 s</option>
+            <option value="10000">10 s</option>
+            <option value="60000">1 min</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Write Mode</label>
+          <select class="select" name="write_mode">
+            <option value="always">Always</option>
+            <option value="on_change" selected>On change</option>
+            <option value="on_change_absolute">Δ absolute</option>
+            <option value="on_change_relative">Δ relative %</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Threshold</label>
+          <input class="input" type="number" name="threshold" value="0" step="0.01" min="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">
+          <input type="checkbox" name="dynamic_rescan_enabled" value="true" checked>
+          Auto-discover new instances (every
+          <input class="input input-inline" type="number" name="dynamic_rescan_interval" value="300" min="30"> s)
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create Group &amp; Subscribe</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('siblings-panel').innerHTML=''">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>

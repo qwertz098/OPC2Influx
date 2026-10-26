@@ -1,0 +1,297 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom:.5rem">
+  <h1>Data Viewer</h1>
+</div>
+
+{% if not targets %}
+<div class="card">
+  <div class="card-body text-center text-muted">
+    <p>No enabled SQLite targets found. Add one in <a href="/config/sqlite">SQLite config</a>.</p>
+  </div>
+</div>
+{% else %}
+
+<div class="card mb-3">
+  <div class="card-body" style="padding:.75rem 1rem">
+    <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
+      <!-- Signal picker -->
+      <div style="flex:1;min-width:260px">
+        <label class="form-label" style="margin-bottom:.25rem">Signals</label>
+        <div id="signal-pills" style="display:flex;flex-wrap:wrap;gap:.35rem;min-height:32px;
+             border:1px solid var(--border);border-radius:6px;padding:.35rem .5rem;cursor:text"
+             onclick="document.getElementById('sig-search').focus()">
+          <input id="sig-search" type="text" placeholder="Type to search…"
+                 style="border:none;outline:none;background:transparent;min-width:120px;font-size:.85rem"
+                 oninput="filterSignals(this.value)" autocomplete="off">
+        </div>
+        <div id="sig-dropdown" style="display:none;position:absolute;z-index:100;
+             background:var(--surface,#fff);border:1px solid var(--border,#ddd);border-radius:6px;
+             max-height:220px;overflow-y:auto;min-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.15)">
+        </div>
+      </div>
+      <!-- Time range presets -->
+      <div style="display:flex;gap:.35rem;align-items:center">
+        <span class="text-sm text-muted">Range:</span>
+        {% for label, ms in [('15m', 900000), ('1h', 3600000), ('6h', 21600000), ('24h', 86400000), ('7d', 604800000)] %}
+        <button class="btn btn-ghost btn-xs preset-btn" data-ms="{{ ms }}"
+                onclick="setPreset({{ ms }}, this)">{{ label }}</button>
+        {% endfor %}
+      </div>
+      <!-- Navigator zoom buttons -->
+      <div style="display:flex;gap:.25rem;align-items:center;margin-left:auto">
+        <span class="text-sm text-muted">Zoom:</span>
+        <button class="btn btn-ghost btn-xs" onclick="nudgeZoom(0.5)" title="Zoom in">＋</button>
+        <button class="btn btn-ghost btn-xs" onclick="nudgeZoom(2.0)" title="Zoom out">－</button>
+        <button class="btn btn-ghost btn-xs" onclick="resetZoom()" title="Reset zoom">⟳</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div id="chart-container" style="width:100%;height:520px;position:relative">
+    <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
+         height:100%;color:var(--text-muted);font-size:.9rem">
+      Select one or more signals above to begin.
+    </div>
+    <div id="chart" style="width:100%;height:100%;display:none"></div>
+  </div>
+</div>
+
+{% endif %}
+
+<script src="/static/vendor/echarts@5.min.js"></script>
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let allSignals = [];
+let selectedSignals = new Map(); // key → {db, table, col, label, color}
+let chart = null;
+let currentFrom = null;
+let currentTo = null;
+let fetchDebounce = null;
+const COLORS = ['#4e79d8','#e4563a','#f28e2b','#76b7b2','#59a14f',
+                '#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  fetch('/data/signals')
+    .then(r => r.json())
+    .then(sigs => { allSignals = sigs; });
+
+  document.addEventListener('click', e => {
+    const path = e.composedPath();
+    if (!path.includes(document.getElementById('signal-pills')) &&
+        !path.includes(document.getElementById('sig-dropdown'))) {
+      document.getElementById('sig-dropdown').style.display = 'none';
+    }
+  });
+
+  // Dropdown click via event delegation (avoids broken inline-onclick with JSON quotes)
+  document.getElementById('sig-dropdown').addEventListener('click', e => {
+    const opt = e.target.closest('.sig-option');
+    if (!opt) return;
+    const key = opt.dataset.key;
+    const s = allSignals.find(sig => sigKey(sig) === key);
+    if (s) toggleSignal(s);
+    e.stopPropagation();
+  });
+
+  // Default to last 1 hour
+  const btn1h = document.querySelector('.preset-btn[data-ms="3600000"]');
+  if (btn1h) setPreset(3600000, btn1h);
+});
+
+// ─── Signal picker ────────────────────────────────────────────────────────────
+function filterSignals(query) {
+  const dd = document.getElementById('sig-dropdown');
+  const q = query.trim().toLowerCase();
+  const filtered = q ? allSignals.filter(s => s.label.toLowerCase().includes(q)) : allSignals;
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+
+  dd.innerHTML = filtered.slice(0, 50).map(s => {
+    const key = sigKey(s);
+    const active = selectedSignals.has(key);
+    return `<div class="sig-option ${active ? 'active' : ''}" data-key="${key}"
+                 style="padding:.4rem .75rem;cursor:pointer;font-size:.83rem;
+                        background:${active ? 'var(--primary-bg,#e8f0fe)' : 'var(--surface,#fff)'};
+                        border-bottom:1px solid var(--border)">
+              ${s.label}
+            </div>`;
+  }).join('');
+
+  // Position dropdown below the input
+  const inp = document.getElementById('sig-search');
+  const rect = inp.getBoundingClientRect();
+  const container = document.getElementById('signal-pills').getBoundingClientRect();
+  dd.style.top = (container.bottom + window.scrollY + 2) + 'px';
+  dd.style.left = container.left + 'px';
+  dd.style.display = 'block';
+}
+
+function sigKey(s) { return `${s.db}|${s.table}|${s.col}`; }
+
+function toggleSignal(s) {
+  const key = sigKey(s);
+  if (selectedSignals.has(key)) {
+    selectedSignals.delete(key);
+  } else {
+    const color = COLORS[selectedSignals.size % COLORS.length];
+    selectedSignals.set(key, {...s, color});
+  }
+  renderPills();
+  document.getElementById('sig-search').value = '';
+  filterSignals('');
+  scheduleFetch();
+}
+
+function renderPills() {
+  const container = document.getElementById('signal-pills');
+  // Remove old pills
+  container.querySelectorAll('.pill').forEach(p => p.remove());
+  const inp = document.getElementById('sig-search');
+  for (const [key, s] of selectedSignals) {
+    const pill = document.createElement('span');
+    pill.className = 'pill';
+    pill.style.cssText = `display:inline-flex;align-items:center;gap:.25rem;
+      padding:.15rem .5rem;border-radius:12px;font-size:.78rem;
+      background:${s.color}22;border:1px solid ${s.color};color:var(--text)`;
+    const dot = document.createElement('span');
+    dot.style.color = s.color;
+    dot.textContent = '●';
+    const lbl = document.createElement('span');
+    lbl.textContent = ' ' + s.col;
+    const rm = document.createElement('span');
+    rm.style.cssText = 'cursor:pointer;margin-left:.25rem;opacity:.6;font-size:.9em';
+    rm.textContent = '✕';
+    rm.addEventListener('click', ev => { ev.stopPropagation(); toggleSignal(s); });
+    pill.append(dot, lbl, rm);
+    container.insertBefore(pill, inp);
+  }
+}
+
+// ─── Time range presets ───────────────────────────────────────────────────────
+function setPreset(ms, btn) {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const now = new Date();
+  currentTo = now.toISOString().replace('T', ' ').substring(0, 19);
+  currentFrom = new Date(now - ms).toISOString().replace('T', ' ').substring(0, 19);
+  scheduleFetch();
+}
+
+// ─── Fetch & render ───────────────────────────────────────────────────────────
+function scheduleFetch() {
+  clearTimeout(fetchDebounce);
+  fetchDebounce = setTimeout(fetchAndRender, 200);
+}
+
+async function fetchAndRender() {
+  if (!selectedSignals.size) {
+    if (chart) chart.clear();
+    document.getElementById('chart-placeholder').style.display = 'flex';
+    document.getElementById('chart').style.display = 'none';
+    return;
+  }
+
+  const from = currentFrom || '';
+  const to = currentTo || '';
+
+  const fetches = [...selectedSignals.values()].map(s =>
+    fetch(`/data/query?db=${encodeURIComponent(s.db)}&table=${encodeURIComponent(s.table)}&col=${encodeURIComponent(s.col)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then(r => r.json())
+      .then(d => ({...s, data: d.series || []}))
+  );
+
+  const results = await Promise.all(fetches);
+
+  document.getElementById('chart-placeholder').style.display = 'none';
+  const chartEl = document.getElementById('chart');
+  chartEl.style.display = 'block';
+
+  if (!chart) {
+    chart = echarts.init(chartEl);
+    chart.on('dataZoom', onDataZoom);
+  }
+
+  const series = results.map(s => ({
+    name: s.col,
+    type: 'line',
+    data: s.data.map(p => [p.t.replace(' ', 'T'), p.v]),
+    symbol: 'none',
+    lineStyle: { color: s.color, width: 1.5 },
+    itemStyle: { color: s.color },
+    smooth: false,
+  }));
+
+  const legendData = results.map(s => s.col);
+
+  chart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    legend: { top: 4, data: legendData, textStyle: { fontSize: 12 } },
+    grid: { left: 56, right: 20, top: 36, bottom: 108 },
+    xAxis: { type: 'time', boundaryGap: false },
+    yAxis: { type: 'value', scale: true },
+    dataZoom: [
+      { type: 'inside', xAxisIndex: 0 },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        bottom: 8,
+        height: 52,
+        fillerColor: 'rgba(78,121,216,0.15)',
+        borderColor: 'var(--border, #ddd)',
+        handleStyle: { color: '#4e79d8' },
+        textStyle: { fontSize: 10 },
+      },
+    ],
+    series,
+  }, true);
+}
+
+// ─── Zoom controls ────────────────────────────────────────────────────────────
+function nudgeZoom(factor) {
+  if (!chart) return;
+  const opt = chart.getOption();
+  const dz = opt.dataZoom && opt.dataZoom[1];
+  if (!dz) return;
+
+  const startVal = dz.startValue;
+  const endVal   = dz.endValue;
+  if (startVal == null || endVal == null) return;
+
+  const center = (startVal + endVal) / 2;
+  const half   = Math.abs(endVal - startVal) / 2 * factor;
+  chart.dispatchAction({
+    type: 'dataZoom',
+    dataZoomIndex: 1,
+    startValue: center - half,
+    endValue:   center + half,
+  });
+}
+
+function resetZoom() {
+  if (!chart) return;
+  chart.dispatchAction({ type: 'dataZoom', dataZoomIndex: 1, start: 0, end: 100 });
+}
+
+function onDataZoom(params) {
+  // Sync currentFrom/currentTo when user drags navigator (debounced re-fetch)
+  if (params.batch) {
+    const dz = params.batch[0];
+    if (dz && dz.startValue != null) {
+      currentFrom = new Date(dz.startValue).toISOString().replace('T', ' ').substring(0, 19);
+      currentTo   = new Date(dz.endValue).toISOString().replace('T', ' ').substring(0, 19);
+      // Deactivate preset buttons since range changed manually
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    }
+  }
+}
+
+// Resize chart with window
+window.addEventListener('resize', () => { if (chart) chart.resize(); });
+</script>
+{% endblock %}

@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# App runtime data (user-specific config and DB files)
+config/
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment / secrets
+.env
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code session files
+.claude/
+
+# Docker build cache
+.buildx-state/
+
+# Logs / shortcuts
+*.log
+*.url

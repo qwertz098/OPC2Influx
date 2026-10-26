@@ -1,0 +1,67 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>OPC UA Browser</h1>
+  <span class="text-sm text-muted">Click a variable checkbox to subscribe · click folder checkbox to subscribe all recursively ·
+    <span style="color:var(--green);font-weight:600">✓ green</span> = manual subscription ·
+    <span style="color:var(--dyn);font-weight:600">⟳ violet</span> = managed by dynamic folder ·
+    <span class="btn-dyn-folder" style="cursor:default">⟳</span> on a folder = create/release watcher</span>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    {% if not servers %}
+    <p class="p-3 text-muted">No servers configured. <a href="/config/servers">Configure →</a></p>
+    {% else %}
+    <ul class="node-tree" id="tree-unified" style="padding:8px 0">
+      {% for srv in servers %}
+      {% set status = server_status.get(srv.id) %}
+      {% set connected = status and status.connected %}
+      <li class="node node--server" data-node-id="__srv__{{ srv.id }}" data-server="{{ srv.id }}">
+        <div class="node-header">
+          {% if connected %}
+          <button class="node-toggle"
+                  hx-get="/browser/nodes/{{ srv.id }}"
+                  hx-target="#children-srv-{{ srv.id | slugify }}"
+                  hx-swap="innerHTML"
+                  hx-trigger="click once"
+                  hx-indicator="#spinner-{{ srv.id | slugify }}"
+                  onclick="onToggleClick(this)"
+                  aria-label="Expand {{ srv.display_name }}">▶</button>
+          {% else %}
+          <span class="node-toggle-placeholder"></span>
+          {% endif %}
+          <span class="status-dot {{ 'dot-green' if connected else 'dot-red' }}" style="margin:0 2px"></span>
+          <span class="node-icon">🖥</span>
+          <span class="node-name" style="font-weight:600">{{ srv.display_name }}</span>
+          <span class="text-muted text-sm mono" style="font-weight:400">{{ srv.endpoint_url }}</span>
+          {% if status and not connected and status.last_error %}
+          <span class="text-red text-xs">{{ status.last_error[:60] }}</span>
+          {% endif %}
+          {% if connected %}
+          <button class="btn btn-xs btn-ghost" style="margin-left:auto"
+                  hx-get="/browser/nodes/{{ srv.id }}"
+                  hx-target="#children-srv-{{ srv.id | slugify }}"
+                  hx-swap="innerHTML"
+                  onclick="resetServerTree('{{ srv.id }}')"
+                  title="Refresh">↻</button>
+          {% endif %}
+          <span class="htmx-indicator spinner" id="spinner-{{ srv.id | slugify }}">⟳</span>
+        </div>
+        <ul class="node-children" id="children-srv-{{ srv.id | slugify }}">
+          {% if not connected %}
+          <li class="node-offline">Server offline — cannot browse</li>
+          {% endif %}
+        </ul>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Sibling panel (kept for group feature) -->
+<div id="siblings-panel" class="mt-4"></div>
+{% endblock %}

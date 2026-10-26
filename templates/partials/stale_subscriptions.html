@@ -1,0 +1,65 @@
+{# Always show a summary line #}
+{% set n_stale = stale | length %}
+{% set n_skipped = skipped | length %}
+<div class="card mb-3" style="border-left:4px solid {% if n_stale %}var(--red,#ef4444){% elif n_skipped %}var(--yellow,#eab308){% else %}var(--green,#22c55e){% endif %}">
+  <div class="card-body" style="padding:10px 16px;font-size:0.875rem">
+    {% if n_stale == 0 and n_skipped == 0 %}
+      ✓ All {{ total_checked }} subscription{% if total_checked != 1 %}s{% endif %} are reachable.
+    {% else %}
+      Checked {{ total_checked }} subscription{% if total_checked != 1 %}s{% endif %} —
+      {% if n_stale %}
+        <strong style="color:var(--red,#ef4444)">{{ n_stale }} stale</strong>{% if n_skipped %},{% endif %}
+      {% endif %}
+      {% if n_skipped %}
+        {{ n_skipped }} skipped (server not connected)
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if n_stale %}
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Stale subscriptions</span>
+    <form action="/subscriptions/delete-stale" method="post"
+          onsubmit="return confirm('Delete {{ n_stale }} stale subscription{% if n_stale != 1 %}s{% endif %}?')">
+      {% for entry in stale %}
+      <input type="hidden" name="sub_id" value="{{ entry.sub.id }}">
+      {% endfor %}
+      <button class="btn btn-danger btn-xs">Delete all stale</button>
+    </form>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="table" style="margin:0">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Server</th>
+          <th>Node ID</th>
+          <th>Measurement</th>
+          <th>Reason</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in stale %}
+        <tr>
+          <td>{{ entry.sub.display_name or entry.sub.node_id }}</td>
+          <td class="text-sm text-muted">{{ server_name_map.get(entry.sub.server_id, entry.sub.server_id) }}</td>
+          <td class="mono text-xs">{{ entry.sub.node_id }}</td>
+          <td class="mono text-sm">{{ entry.sub.influxdb.measurement }}</td>
+          <td><span class="badge badge-error badge-wrap">{{ entry.reason }}</span></td>
+          <td>
+            <form action="/subscriptions/delete-stale" method="post" style="display:inline"
+                  onsubmit="return confirm('Delete this subscription?')">
+              <input type="hidden" name="sub_id" value="{{ entry.sub.id }}">
+              <button class="btn btn-danger btn-xs">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

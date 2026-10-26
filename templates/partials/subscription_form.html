@@ -1,0 +1,58 @@
+<div class="card">
+  <div class="card-header">Configure Subscriptions ({{ items | length }} tag{{ 's' if items | length != 1 }})</div>
+  <div class="card-body">
+    <form action="/subscriptions" method="post">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Tag / Browse Path</th>
+            <th>Measurement</th>
+            <th>Field</th>
+            <th>Interval</th>
+            <th>Write Mode</th>
+            <th>Threshold</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td>
+              <div class="text-sm font-medium">{{ item.display_name }}</div>
+              <div class="mono text-xs text-muted">{{ item.node_id }}</div>
+              <input type="hidden" name="node_id" value="{{ item.node_id }}">
+              <input type="hidden" name="server_id" value="{{ item.server_id }}">
+              <input type="hidden" name="browse_path" value="{{ item.browse_path }}">
+              <input type="hidden" name="display_name" value="{{ item.display_name }}">
+            </td>
+            <td><input class="input input-sm" type="text" name="measurement" value="{{ item.measurement }}"></td>
+            <td><input class="input input-sm" type="text" name="field_name" value="value"></td>
+            <td>
+              <select class="select select-sm" name="interval_ms">
+                <option value="100">100 ms</option>
+                <option value="500">500 ms</option>
+                <option value="1000" selected>1 s</option>
+                <option value="5000">5 s</option>
+                <option value="10000">10 s</option>
+                <option value="60000">1 min</option>
+              </select>
+            </td>
+            <td>
+              <select class="select select-sm" name="write_mode" onchange="toggleThreshold(this)">
+                <option value="always">Always</option>
+                <option value="on_change" selected>On change</option>
+                <option value="on_change_absolute">Δ absolute</option>
+                <option value="on_change_relative">Δ relative %</option>
+              </select>
+            </td>
+            <td><input class="input input-sm" type="number" name="threshold" value="0" step="0.01" min="0"></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Subscriptions</button>
+        <a href="/browser" class="btn btn-ghost">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>

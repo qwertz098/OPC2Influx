@@ -1,0 +1,23 @@
+{% set subscribed = sub_id is not none %}
+{% set is_dyn = subscribed and is_dyn is defined and is_dyn %}
+{% set locked = dyn_locked is defined and dyn_locked %}
+<span class="var-subscribe-wrap" id="vsw-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}">
+<input type="checkbox"
+       class="node-checkbox variable-checkbox{% if is_dyn %} subscribed--dyn{% elif subscribed %} subscribed{% endif %}"
+       {% if subscribed %}checked{% endif %}
+       {% if locked %}disabled data-dyn-locked="1"
+       title="Managed by a dynamic folder watcher — release the watcher (✕⟳) on the folder to change subscriptions manually"
+       {% else %}hx-post="/browser/{% if subscribed %}unsubscribe{% else %}subscribe{% endif %}"
+       hx-vals='{"node_id": "{{ node.node_id | e }}", "server_id": "{{ node.server_id | e }}", "browse_path": "{{ node.browse_path | e }}", "display_name": "{{ node.display_name | e }}"{% if subscribed %}, "sub_id": "{{ sub_id }}"{% endif %}}'
+       hx-target="#vsw-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
+       hx-swap="outerHTML"
+       onchange="onVariableCheckChange(this)"{% endif %}
+       data-server="{{ node.server_id }}"
+       data-path="{{ node.browse_path }}"
+       data-name="{{ node.display_name }}">
+<span class="node-icon">📊</span>
+<span class="node-name{% if is_dyn %} subscribed-name--dyn{% elif subscribed %} subscribed-name{% endif %}">{{ node.display_name }}</span>
+{% if is_dyn %}<span class="subscribe-badge subscribe-badge--dyn" title="Auto-managed by a dynamic folder watcher — manual removal is undone on the next rescan">⟳</span>
+{% elif subscribed %}<span class="subscribe-badge">✓</span>{% endif %}
+<span class="subscribe-spinner htmx-indicator spinner">⟳</span>
+</span>

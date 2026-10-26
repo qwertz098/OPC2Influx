@@ -1,0 +1,868 @@
+{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom:.5rem">
+  <h1>Live Chart</h1>
+</div>
+
+<!-- Toolbar -->
+<div class="card mb-3">
+  <div class="card-body" style="padding:.6rem 1rem">
+    <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+      <button id="startBtn"  class="btn btn-primary btn-sm" onclick="startCharting()">▶ Start</button>
+      <button id="pauseBtn"  class="btn btn-secondary btn-sm" onclick="togglePause()" style="display:none">⏸ Pause</button>
+      <button id="clearBtn"  class="btn btn-danger btn-sm"  onclick="clearCharting()" style="display:none">■ Clear</button>
+      <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
+      <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem">
+        Interval:
+        <select id="intervalSel" class="input input-sm" style="width:auto;padding:.15rem .4rem">
+          <option value="500">0.5 s</option>
+          <option value="1000" selected>1 s</option>
+          <option value="2000">2 s</option>
+          <option value="5000">5 s</option>
+          <option value="10000">10 s</option>
+        </select>
+      </label>
+      <button id="logTimeBtn" class="btn btn-ghost btn-sm" onclick="toggleLogTime()"
+              title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
+      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
+              title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
+             title="Sliding window: only the most recent data is kept; older points scroll off. ∞ keeps everything (up to the memory cap).">
+        Time frame:
+        <select id="maxTimeSel" class="input input-sm" style="width:auto;padding:.15rem .4rem">
+          <option value="0">∞</option>
+          <option value="60">1 min</option>
+          <option value="300">5 min</option>
+          <option value="600">10 min</option>
+          <option value="1800">30 min</option>
+          <option value="3600" selected>1 h</option>
+          <option value="18000">5 h</option>
+          <option value="86400">24 h</option>
+          <option value="604800">7 d</option>
+        </select>
+      </label>
+      <span id="statusMsg" class="text-sm text-muted" style="margin-left:auto"></span>
+      <button class="btn btn-ghost btn-sm" onclick="saveView()" title="Save current signals and settings as a named view">Save view</button>
+      <div style="display:flex;align-items:center;gap:.3rem">
+        <select id="loadViewSel" class="input input-sm" style="width:auto;padding:.15rem .4rem;max-width:160px" onchange="_onViewSelChange()">
+          <option value="">Select…</option>
+        </select>
+        <button id="loadViewBtn"   class="btn btn-ghost btn-sm" onclick="loadSelectedView()"   title="Load selected view"                         disabled>Load</button>
+        <button id="deleteViewBtn" class="btn btn-ghost btn-sm" onclick="deleteSelectedView()" title="Delete selected view" style="color:var(--red,#ef4444)" disabled>✕</button>
+        <button id="openEmbedBtn"  class="btn btn-ghost btn-sm" onclick="openEmbedView()"      title="Open embedded view in new tab" disabled>↗</button>
+        <span class="text-sm text-muted" style="cursor:help" title="URL suffixes for the embed view: /dark (default), /dark_shaded, /light, /light_shaded. Example: /chart/embed/{id}/light_shaded">(i)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Split layout: tree left, chart right -->
+<div style="display:grid;grid-template-columns:300px 1fr;gap:1rem;align-items:start">
+
+  <!-- Left column: subscriptions tile (if any) + OPC UA browser tree -->
+  <div style="display:flex;flex-direction:column;gap:1rem;min-width:0">
+
+  {% if subscriptions %}
+  <div class="card" style="max-height:260px;display:flex;flex-direction:column;min-width:0">
+    <div class="card-header" style="font-size:.85rem;padding:.5rem .75rem">From Subscriptions</div>
+    <div style="padding:.4rem .6rem;border-bottom:1px solid var(--border);display:flex;gap:.4rem">
+      <input type="text" id="subFilterInput" class="input input-sm" placeholder="Filter…"
+             style="flex:1;min-width:0" oninput="filterSubList()">
+      <select id="subServerFilter" class="input input-sm" style="width:auto;flex-shrink:0" onchange="filterSubList()">
+        <option value="">All servers</option>
+        {% for srv in servers %}
+        <option value="{{ srv.id }}">{{ srv.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="card-body p-0" style="overflow-y:auto;flex:1">
+      <ul class="node-tree" id="subList" style="padding:4px 0;min-width:max-content">
+        {% for sub in subscriptions %}
+        {% set stripped = stripped_measurements.get(sub.id, sub.influxdb.measurement) %}
+        <li class="node node--variable sub-list-item"
+            data-server-id="{{ sub.server_id | e }}"
+            data-search="{{ (server_names.get(sub.server_id, sub.server_id) ~ ' ' ~ stripped ~ ' ' ~ (sub.display_name or sub.node_id)) | lower }}">
+          <div class="node-header">
+            <input type="checkbox"
+                   class="node-checkbox chart-var-checkbox"
+                   onchange="chartVarToggle(this)"
+                   data-server="{{ sub.server_id | e }}"
+                   data-node="{{ sub.node_id | e }}"
+                   data-path="{{ sub.browse_path | e }}"
+                   data-name="{{ sub.display_name | e }}"
+                   data-label="{{ sub.influxdb.measurement | e }}">
+            <span class="node-name" title="{{ sub.influxdb.measurement }}">{{ stripped_measurements.get(sub.id, sub.influxdb.measurement) }}</span>
+            <span class="text-muted text-xs" style="margin-left:auto;padding-left:.5rem">{{ server_names.get(sub.server_id, sub.server_id) }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      <p id="subFilterEmpty" class="text-muted text-sm p-2" style="display:none">No matches.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- OPC UA browser tree -->
+  <div class="card" style="max-height:calc(100vh - {{ '460px' if subscriptions else '175px' }});overflow-y:auto;overflow-x:auto;min-width:0">
+    <div class="card-header" style="font-size:.85rem;padding:.5rem .75rem">Browse Servers</div>
+    <div class="card-body p-0">
+      {% if not servers %}
+      <p class="p-3 text-muted text-sm">No servers configured. <a href="/config/servers">Configure →</a></p>
+      {% else %}
+      <ul class="node-tree" style="padding:8px 0;min-width:max-content">
+        {% for srv in servers %}
+        {% set status = server_status.get(srv.id) %}
+        {% set connected = status and status.connected %}
+        <li class="node node--server">
+          <div class="node-header">
+            {% if connected %}
+            <button class="node-toggle"
+                    hx-get="/chart/nodes/{{ srv.id }}"
+                    hx-target="#chart-srv-{{ srv.id | slugify }}"
+                    hx-swap="innerHTML"
+                    hx-trigger="click once"
+                    hx-indicator="#chart-spi-{{ srv.id | slugify }}"
+                    onclick="onToggleClick(this)">▶</button>
+            {% else %}
+            <span class="node-toggle-placeholder"></span>
+            {% endif %}
+            <span class="status-dot {{ 'dot-green' if connected else 'dot-red' }}" style="margin:0 2px"></span>
+            <span class="node-icon">🖥</span>
+            <span class="node-name" style="font-weight:600;font-size:.85rem">{{ srv.display_name }}</span>
+            <span class="htmx-indicator spinner" id="chart-spi-{{ srv.id | slugify }}">⟳</span>
+          </div>
+          <ul class="node-children" id="chart-srv-{{ srv.id | slugify }}">
+            {% if not connected %}
+            <li class="text-muted text-sm" style="padding:.4rem 1rem">Offline</li>
+            {% endif %}
+          </ul>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+
+  </div>
+
+  <!-- Right: ECharts live chart -->
+  <div class="card">
+    <div id="chart-area" style="width:100%;height:calc(100vh - 300px);min-height:320px">
+      <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
+           height:100%;color:var(--text-muted);font-size:.9rem">
+        Select signals from the tree, then press Start.
+      </div>
+    </div>
+    <!-- Legend: one row per signal -->
+    <div id="chart-legend" style="padding:.5rem 1rem;border-top:1px solid var(--border);display:none"></div>
+  </div>
+
+</div>
+
+<script src="/static/vendor/echarts@5.min.js"></script>
+<script>
+// ─── Constants & state ────────────────────────────────────────────────────────
+const STRIP_PREFIXES = {{ strip_prefixes | tojson }};
+const COLORS = [
+  '#e6194b','#3cb44b','#4363d8','#f58231','#911eb4',
+  '#42d4f4','#f032e6','#bfef45','#469990','#dcbeff',
+];
+const MAX_PTS = 2000;
+
+let selectedSignals = new Map(); // key → {server_id, node_id, path, name, color, label}
+let buffers         = new Map(); // key → [{t: ms, v: number}]
+let multipliers     = new Map(); // key → float (default 1.0)
+let seriesKeys      = [];        // ordered keys matching series[] in last render
+
+let running          = false;
+let paused           = false;
+let polling          = false;
+let logTimeMode      = false;
+let autoScaleMode    = false;
+let chartInitialized = false;
+let pollingTimer     = null;
+let startedAt        = null;
+let chart            = null;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function sigKey(server_id, node_id) { return server_id + '|' + node_id; }
+
+function browsePath2Label(path) {
+  return path.split('/').filter(Boolean).join('.') || path;
+}
+
+function applyStrips(server_id, label) {
+  const strips = STRIP_PREFIXES[server_id] || [];
+  for (const s of strips) {
+    if (s && label.startsWith(s)) {
+      label = label.slice(s.length).replace(/^[./]+/, '');
+    }
+  }
+  return label;
+}
+
+function sigLabel(sig) {
+  if (sig.raw) return sig.label || sig.name; // already the actual measurement name — don't re-derive/strip
+  return applyStrips(sig.server_id, sig.label || sig.name) || sig.name;
+}
+
+function fmtVal(v) {
+  if (v === null || v === undefined) return '—';
+  if (Number.isInteger(v)) return String(v);
+  const abs = Math.abs(v);
+  if (abs === 0) return '0';
+  // Always use decimal notation — no scientific notation
+  if (abs >= 100000) return v.toFixed(0);
+  if (abs >= 10000)  return v.toFixed(1);
+  if (abs >= 1000)   return v.toFixed(1);
+  if (abs >= 100)    return v.toFixed(2);
+  if (abs >= 10)     return v.toFixed(3);
+  if (abs >= 1)      return v.toFixed(4);
+  if (abs >= 0.01)   return v.toFixed(5);
+  return v.toFixed(8);
+}
+
+function decimateBuffer(buf) {
+  const half = Math.floor(buf.length / 2);
+  const kept = buf.filter((_, i) => i >= half || i % 2 === 0);
+  buf.length = 0;
+  buf.push(...kept);
+}
+
+// Sliding window: drop points older than windowMs from the newest point.
+function trimBuffer(buf, windowMs) {
+  if (!buf.length) return;
+  const cutoff = buf[buf.length - 1].t - windowMs;
+  let i = 0;
+  while (i < buf.length && buf[i].t < cutoff) i++;
+  if (i > 0) buf.splice(0, i);
+}
+
+// ─── Subscriptions tile filter ────────────────────────────────────────────────
+function filterSubList() {
+  const q = (document.getElementById('subFilterInput')?.value || '').trim().toLowerCase();
+  const serverId = document.getElementById('subServerFilter')?.value || '';
+  const items = document.querySelectorAll('#subList .sub-list-item');
+  let visibleCount = 0;
+  items.forEach(li => {
+    const textMatch = !q || (li.dataset.search || '').includes(q);
+    const serverMatch = !serverId || li.dataset.serverId === serverId;
+    const match = textMatch && serverMatch;
+    li.style.display = match ? '' : 'none';
+    if (match) visibleCount++;
+  });
+  const empty = document.getElementById('subFilterEmpty');
+  if (empty) empty.style.display = visibleCount === 0 ? '' : 'none';
+}
+
+// ─── Signal selection ─────────────────────────────────────────────────────────
+function chartVarToggle(el) {
+  const server_id = el.dataset.server;
+  const node_id   = el.dataset.node;
+  const path      = el.dataset.path;
+  const name      = el.dataset.name;
+  const rawLabel  = el.dataset.label; // explicit label (e.g. measurement name) — skip path derivation/stripping
+  const key       = sigKey(server_id, node_id);
+
+  if (el.checked) {
+    const color = COLORS[selectedSignals.size % COLORS.length];
+    const label = rawLabel || browsePath2Label(path) || name;
+    selectedSignals.set(key, {server_id, node_id, path, name, color, label, raw: !!rawLabel});
+    buffers.set(key, []);
+    multipliers.set(key, 1.0);
+  } else {
+    selectedSignals.delete(key);
+    buffers.delete(key);
+    multipliers.delete(key);
+  }
+  chartInitialized = false;
+  renderChart();
+  updatePlaceholder();
+}
+
+/** Removes one signal (via its legend ✕ button) and unchecks any matching source checkbox. */
+function removeSignal(key) {
+  selectedSignals.delete(key);
+  buffers.delete(key);
+  multipliers.delete(key);
+  const [serverId, nodeId] = key.split('|');
+  document.querySelectorAll('.chart-var-checkbox').forEach(cb => {
+    if (cb.dataset.server === serverId && cb.dataset.node === nodeId) cb.checked = false;
+  });
+  chartInitialized = false;
+  renderChart();
+  updatePlaceholder();
+}
+
+function unselectAll() {
+  // Stop a running chart first — otherwise the poll timer keeps running and
+  // the toolbar stays in its "Running…" state with no signals selected.
+  if (running) clearCharting();
+  document.querySelectorAll('.chart-var-checkbox:checked').forEach(cb => { cb.checked = false; });
+  selectedSignals.clear();
+  buffers.clear();
+  multipliers.clear();
+  chartInitialized = false;
+  renderChart();
+  updatePlaceholder();
+  setStatus('');
+  try { sessionStorage.removeItem(SS_KEY); } catch {}
+}
+
+// ─── Multiplier ───────────────────────────────────────────────────────────────
+function setMultiplier(key, val) {
+  const m = parseFloat(val);
+  multipliers.set(key, isFinite(m) && m !== 0 ? m : 1.0);
+  updateSeriesData();
+}
+
+// ─── Start / Clear / Pause ────────────────────────────────────────────────────
+function startCharting() {
+  running   = true;
+  paused    = false;
+  startedAt = Date.now();
+  const ms  = parseInt(document.getElementById('intervalSel').value);
+  pollingTimer = setInterval(pollAndRender, ms);
+  pollAndRender();
+
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('pauseBtn').style.display = '';
+  document.getElementById('clearBtn').style.display = '';
+  setStatus('Running…');
+}
+
+function clearCharting(reason) {
+  clearInterval(pollingTimer);
+  pollingTimer = null;
+  running   = false;
+  paused    = false;
+  startedAt = null;
+  for (const key of buffers.keys()) buffers.set(key, []);
+  chartInitialized = false;
+  renderChart();
+
+  document.getElementById('startBtn').style.display = '';
+  document.getElementById('pauseBtn').style.display = 'none';
+  document.getElementById('clearBtn').style.display = 'none';
+  document.getElementById('pauseBtn').textContent = '⏸ Pause';
+  setStatus(reason || 'Cleared');
+  try { sessionStorage.removeItem(SS_KEY); } catch {}
+}
+
+function togglePause() {
+  const btn = document.getElementById('pauseBtn');
+  if (!paused) {
+    paused = true;
+    clearInterval(pollingTimer);
+    pollingTimer = null;
+    btn.textContent = '▶ Resume';
+    setStatus('Paused');
+  } else {
+    paused = false;
+    const ms = parseInt(document.getElementById('intervalSel').value);
+    pollingTimer = setInterval(pollAndRender, ms);
+    pollAndRender();
+    btn.textContent = '⏸ Pause';
+    setStatus('Running…');
+  }
+}
+
+document.getElementById('intervalSel').addEventListener('change', () => {
+  if (running && !paused) {
+    clearInterval(pollingTimer);
+    const ms = parseInt(document.getElementById('intervalSel').value);
+    pollingTimer = setInterval(pollAndRender, ms);
+  }
+});
+
+// ─── Keep polling alive when tab is shown again ───────────────────────────────
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running && !paused) {
+    clearInterval(pollingTimer);
+    const ms = parseInt(document.getElementById('intervalSel').value);
+    pollingTimer = setInterval(pollAndRender, ms);
+    pollAndRender();
+  }
+});
+
+// ─── Log time toggle ──────────────────────────────────────────────────────────
+function toggleLogTime() {
+  logTimeMode = !logTimeMode;
+  const btn = document.getElementById('logTimeBtn');
+  btn.style.background  = logTimeMode ? 'var(--primary-bg,#e8f0fe)' : '';
+  btn.style.fontWeight  = logTimeMode ? '600' : '';
+  chartInitialized = false;
+  renderChart();
+}
+
+// ─── Auto scale toggle ────────────────────────────────────────────────────────
+function toggleAutoScale() {
+  autoScaleMode = !autoScaleMode;
+  const btn = document.getElementById('autoScaleBtn');
+  btn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
+  btn.style.fontWeight = autoScaleMode ? '600' : '';
+  chartInitialized = false;
+  renderChart();
+}
+
+// ─── Poll ─────────────────────────────────────────────────────────────────────
+async function pollAndRender() {
+  if (!selectedSignals.size || polling) return;
+  const maxSec = parseInt(document.getElementById('maxTimeSel').value);
+  polling = true;
+  const payload = Array.from(selectedSignals.values())
+    .map(s => ({server_id: s.server_id, node_id: s.node_id}));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  try {
+    const resp = await fetch('/chart/read', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const results = await resp.json();
+    for (const r of results) {
+      const key = sigKey(r.server_id, r.node_id);
+      if (r.v === null || !buffers.has(key)) continue;
+      const buf = buffers.get(key);
+      buf.push({t: r.t, v: r.v});
+      if (maxSec > 0) trimBuffer(buf, maxSec * 1000);
+      if (buf.length > MAX_PTS) decimateBuffer(buf);
+    }
+    updateSeriesData();   // data-only update — preserves tooltip/hover state
+    updateLegendValues(); // only update value text — does NOT rebuild DOM (preserves input focus)
+    setStatus('Last: ' + new Date().toLocaleTimeString());
+  } catch (e) {
+    setStatus(e.name === 'AbortError' ? 'Server timeout' : 'Poll error: ' + e.message);
+  } finally {
+    clearTimeout(timeout);
+    polling = false;
+  }
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function getOrInitChart() {
+  if (!chart) {
+    chart = echarts.init(document.getElementById('chart-area'));
+    window.addEventListener('resize', () => chart.resize());
+  }
+  return chart;
+}
+
+function buildSeries() {
+  const nowMs = Date.now();
+  seriesKeys  = [];
+  const series = [];
+  for (const [key, sig] of selectedSignals) {
+    const buf = buffers.get(key) || [];
+    const mul = multipliers.get(key) || 1.0;
+    let data;
+    if (logTimeMode) {
+      data = buf.map(pt => [-Math.log10(nowMs - pt.t + 1), pt.v * mul]);
+    } else {
+      data = buf.map(pt => [pt.t, pt.v * mul]);
+    }
+    seriesKeys.push(key);
+    series.push({
+      id: key,
+      name: sigLabel(sig),
+      type: 'line',
+      showSymbol: false,
+      lineStyle: {color: sig.color, width: 1.5},
+      itemStyle: {color: sig.color},
+      data,
+    });
+  }
+  return series;
+}
+
+function initChart() {
+  const c = getOrInitChart();
+
+  const tooltipFormatter = params => {
+    if (!params.length) return '';
+    let header;
+    if (logTimeMode) {
+      const ms = Math.pow(10, -params[0].value[0]) - 1;
+      header = ms < 90000 ? Math.round(ms/1000) + 's ago'
+             : ms < 5400000 ? Math.round(ms/60000) + 'm ago'
+             : Math.round(ms/3600000) + 'h ago';
+    } else {
+      header = new Date(params[0].value[0]).toLocaleTimeString();
+    }
+    const lines = params.map(p => {
+      const key  = seriesKeys[p.seriesIndex] || '';
+      const mul  = multipliers.get(key) || 1.0;
+      const orig = p.value[1] / mul;
+      return `<span style="color:${p.color}">●</span> ${p.seriesName}: <b>${fmtVal(orig)}</b>`;
+    });
+    return header + '<br>' + lines.join('<br>');
+  };
+
+  const xAxis = logTimeMode ? {
+    type: 'value',
+    min: 'dataMin',
+    max: -Math.log10(1001),
+    inverse: false,
+    axisLabel: {
+      formatter: x => {
+        const ms = Math.pow(10, -x) - 1;
+        if (ms < 500)     return '';
+        if (ms < 90000)   return Math.round(ms / 1000) + 's';
+        if (ms < 5400000) return Math.round(ms / 60000) + 'm';
+        return Math.round(ms / 3600000) + 'h';
+      },
+    },
+    splitLine: {show: true},
+  } : {
+    type: 'time',
+  };
+
+  c.setOption({
+    animation: false,
+    grid: {left: 60, right: 20, top: 40, bottom: 40},
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {type: 'cross'},
+      formatter: tooltipFormatter,
+    },
+    legend: {show: false},
+    xAxis,
+    yAxis: {type: 'value', axisLine: {show: true}, scale: autoScaleMode},
+    series: buildSeries(),
+  }, true);   // notMerge=true: full reset (only on structural changes)
+
+  chartInitialized = true;
+}
+
+function updateSeriesData() {
+  if (!selectedSignals.size) return;
+  if (!chartInitialized) { renderChart(); return; }
+  const c = getOrInitChart();
+  // In log-time mode also update xAxis so ECharts re-evaluates 'dataMin' each tick
+  // (merge mode freezes 'dataMin' at its first evaluated value, causing old points to vanish)
+  const extra = logTimeMode
+    ? { xAxis: { min: 'dataMin', max: -Math.log10(1001) } }
+    : {};
+  c.setOption({ series: buildSeries(), ...extra });
+}
+
+function renderChart() {
+  if (!selectedSignals.size) {
+    if (chart) chart.setOption({series: []}, true);
+    renderLegend();   // hides the legend rows when nothing is selected
+    updatePlaceholder();
+    return;
+  }
+  initChart();
+  renderLegend();
+  updatePlaceholder();
+}
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+// buildLegend: full DOM rebuild — called only when signal list changes
+function buildLegend() {
+  const el = document.getElementById('chart-legend');
+  if (!selectedSignals.size) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = '';
+
+  for (const [key, sig] of selectedSignals) {
+    const buf    = buffers.get(key) || [];
+    const last   = buf.length ? buf[buf.length - 1].v : null;
+    const mul    = multipliers.get(key) || 1.0;
+
+    const row = document.createElement('div');
+    row.dataset.legendKey = key;
+    row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:3px 0;border-bottom:1px solid var(--border);flex-wrap:nowrap';
+
+    // Color swatch
+    const swatch = document.createElement('span');
+    swatch.style.cssText = `display:inline-block;width:22px;height:3px;background:${sig.color};border-radius:2px;flex-shrink:0`;
+    row.appendChild(swatch);
+
+    // Signal name
+    const nameEl = document.createElement('span');
+    nameEl.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem';
+    nameEl.textContent = sigLabel(sig);
+    row.appendChild(nameEl);
+
+    // Actual value — updated in-place by updateLegendValues()
+    const valEl = document.createElement('span');
+    valEl.dataset.legendVal = key;
+    valEl.style.cssText = `font-variant-numeric:tabular-nums;color:${sig.color};font-weight:600;font-size:.82rem;white-space:nowrap;min-width:60px;text-align:right`;
+    valEl.textContent = fmtVal(last);
+    row.appendChild(valEl);
+
+    // × label
+    const xLabel = document.createElement('span');
+    xLabel.style.cssText = 'color:var(--text-muted);font-size:.82rem;flex-shrink:0';
+    xLabel.textContent = '×';
+    row.appendChild(xLabel);
+
+    // Multiplier input — stays in DOM between polls
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.step = '0.1';
+    inp.min  = '0.001';
+    inp.value = Number.isInteger(mul * 10) ? mul.toFixed(1) : mul;
+    inp.dataset.mulKey = key;
+    inp.style.cssText = 'width:58px;padding:1px 4px;font-size:.82rem;text-align:right';
+    inp.className = 'input input-sm';
+    inp.title = 'Scale multiplier for chart display';
+    inp.addEventListener('input', () => setMultiplier(key, inp.value));
+    row.appendChild(inp);
+
+    // Remove button — unselects this signal (unchecks its source checkbox too)
+    const rmBtn = document.createElement('button');
+    rmBtn.type = 'button';
+    rmBtn.className = 'btn btn-ghost btn-xs';
+    rmBtn.style.cssText = 'padding:2px 6px;color:var(--red,#ef4444);flex-shrink:0';
+    rmBtn.title = 'Remove signal';
+    rmBtn.textContent = '✕';
+    rmBtn.addEventListener('click', () => removeSignal(key));
+    row.appendChild(rmBtn);
+
+    el.appendChild(row);
+  }
+
+  if (el.lastChild) el.lastChild.style.borderBottom = 'none';
+}
+
+// updateLegendValues: only refresh the value spans — no DOM rebuild, focus preserved
+function updateLegendValues() {
+  for (const [key] of selectedSignals) {
+    const span = document.querySelector(`[data-legend-val="${CSS.escape(key)}"]`);
+    if (!span) return buildLegend(); // legend not built yet — build it now
+    const buf  = buffers.get(key) || [];
+    const last = buf.length ? buf[buf.length - 1].v : null;
+    span.textContent = fmtVal(last);
+  }
+}
+
+// renderLegend: alias used by renderChart() — always does a full build
+function renderLegend() { buildLegend(); }
+
+function updatePlaceholder() {
+  const ph = document.getElementById('chart-placeholder');
+  if (ph) ph.style.display = selectedSignals.size ? 'none' : 'flex';
+}
+
+function setStatus(msg) {
+  document.getElementById('statusMsg').textContent = msg;
+}
+
+// ─── Session persistence (survive tab navigation) ────────────────────────────
+const SS_KEY = 'chart_state';
+
+function saveState() {
+  const state = {
+    signals: Array.from(selectedSignals.entries()),
+    buffers: Array.from(buffers.entries()),
+    multipliers: Array.from(multipliers.entries()),
+    running,
+    paused,
+    logTimeMode,
+    autoScaleMode,
+    startedAt,
+    interval: document.getElementById('intervalSel').value,
+    maxTime:  document.getElementById('maxTimeSel').value,
+  };
+  try { sessionStorage.setItem(SS_KEY, JSON.stringify(state)); } catch {}
+}
+
+function restoreState() {
+  let raw;
+  try { raw = sessionStorage.getItem(SS_KEY); } catch { return; }
+  if (!raw) return;
+  let state;
+  try { state = JSON.parse(raw); } catch { return; }
+  if (!state.signals || !state.signals.length) return;
+
+  // Restore Maps
+  selectedSignals = new Map(state.signals);
+  buffers         = new Map((state.buffers || []).map(([k, v]) => [k, v || []]));
+  multipliers     = new Map(state.multipliers || []);
+  logTimeMode     = !!state.logTimeMode;
+  autoScaleMode   = !!state.autoScaleMode;
+  startedAt       = state.startedAt || null;
+
+  // Restore UI controls
+  document.getElementById('intervalSel').value = state.interval || '1000';
+  document.getElementById('maxTimeSel').value  = state.maxTime  || '3600';
+  const logBtn = document.getElementById('logTimeBtn');
+  logBtn.style.background = logTimeMode ? 'var(--primary-bg,#e8f0fe)' : '';
+  logBtn.style.fontWeight  = logTimeMode ? '600' : '';
+  const scaleBtn = document.getElementById('autoScaleBtn');
+  scaleBtn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
+  scaleBtn.style.fontWeight  = autoScaleMode ? '600' : '';
+
+  // Re-check tree checkboxes that match restored signals
+  for (const [key] of selectedSignals) {
+    const [serverId, nodeId] = key.split('|');
+    const cb = document.querySelector(
+      `.chart-var-checkbox[data-server="${serverId}"][data-node="${nodeId}"]`
+    );
+    if (cb) cb.checked = true;
+  }
+
+  // Render chart with restored data
+  chartInitialized = false;
+  renderChart();
+  updatePlaceholder();
+
+  // Resume polling if it was running (not paused, not cleared)
+  if (state.running && !state.paused) {
+    running = true;
+    paused  = false;
+    const ms = parseInt(document.getElementById('intervalSel').value);
+    pollingTimer = setInterval(pollAndRender, ms);
+    pollAndRender();
+    document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('pauseBtn').style.display = '';
+    document.getElementById('clearBtn').style.display = '';
+    document.getElementById('pauseBtn').textContent = '⏸ Pause';
+    setStatus('Running…');
+  } else if (state.running && state.paused) {
+    running = true;
+    paused  = true;
+    document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('pauseBtn').style.display = '';
+    document.getElementById('clearBtn').style.display = '';
+    document.getElementById('pauseBtn').textContent = '▶ Resume';
+    setStatus('Paused');
+  }
+}
+
+// Save on every poll tick and before leaving the page
+window.addEventListener('beforeunload', saveState);
+
+// Also save periodically so data is fresh if the tab crashes
+const _origPoll = pollAndRender;
+pollAndRender = async function() { await _origPoll(); saveState(); };
+
+// Restore on page load
+restoreState();
+
+// ─── Saved views ─────────────────────────────────────────────────────────────
+function _onViewSelChange() {
+  const id = document.getElementById('loadViewSel').value;
+  document.getElementById('loadViewBtn').disabled   = !id;
+  document.getElementById('deleteViewBtn').disabled = !id;
+  document.getElementById('openEmbedBtn').disabled  = !id;
+}
+
+function openEmbedView() {
+  const id = document.getElementById('loadViewSel').value;
+  if (!id) return;
+  window.open('/chart/embed/' + id, '_blank', 'noopener');
+}
+
+async function _refreshViewDropdown() {
+  const sel = document.getElementById('loadViewSel');
+  const cur = sel.value;
+  try {
+    const resp = await fetch('/chart/configs');
+    const list = await resp.json();
+    sel.innerHTML = '<option value="">Select…</option>';
+    for (const v of list) {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.name;
+      sel.appendChild(opt);
+    }
+    if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
+  } catch {}
+  _onViewSelChange();
+}
+
+async function saveView() {
+  if (!selectedSignals.size) { alert('No signals selected.'); return; }
+  const name = prompt('Name for this view:');
+  if (!name || !name.trim()) return;
+  const mul = {};
+  for (const [k, v] of multipliers) mul[k] = v;
+  const payload = {
+    name: name.trim(),
+    signals: Array.from(selectedSignals.values()),
+    interval_ms: parseInt(document.getElementById('intervalSel').value),
+    max_time_seconds: parseInt(document.getElementById('maxTimeSel').value),
+    log_time_mode: logTimeMode,
+    auto_scale_mode: autoScaleMode,
+    multipliers: mul,
+  };
+  try {
+    const resp = await fetch('/chart/configs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const saved = await resp.json();
+    await _refreshViewDropdown();
+    document.getElementById('loadViewSel').value = saved.id;
+    _onViewSelChange();
+    setStatus('View "' + saved.name + '" saved.');
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+async function loadSelectedView() {
+  const id = document.getElementById('loadViewSel').value;
+  if (!id) return;
+  try {
+    const resp = await fetch('/chart/configs/' + id);
+    const cfg = await resp.json();
+    if (cfg.error) { alert(cfg.error); return; }
+
+    // Stop any running chart first
+    if (running) clearCharting('Loading view…');
+
+    // Restore signals
+    selectedSignals = new Map(cfg.signals.map(s => [sigKey(s.server_id, s.node_id), s]));
+    buffers = new Map(Array.from(selectedSignals.keys()).map(k => [k, []]));
+    multipliers = new Map(Object.entries(cfg.multipliers || {}));
+
+    // Restore toolbar
+    document.getElementById('intervalSel').value = String(cfg.interval_ms || 1000);
+    document.getElementById('maxTimeSel').value  = String(cfg.max_time_seconds || 3600);
+    logTimeMode   = !!cfg.log_time_mode;
+    autoScaleMode = !!cfg.auto_scale_mode;
+    const logBtn   = document.getElementById('logTimeBtn');
+    logBtn.style.background = logTimeMode   ? 'var(--primary-bg,#e8f0fe)' : '';
+    logBtn.style.fontWeight  = logTimeMode   ? '600' : '';
+    const scaleBtn = document.getElementById('autoScaleBtn');
+    scaleBtn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
+    scaleBtn.style.fontWeight  = autoScaleMode ? '600' : '';
+
+    chartInitialized = false;
+    renderChart();
+    updatePlaceholder();
+    setStatus('Loaded "' + cfg.name + '"');
+  } catch (e) {
+    alert('Load failed: ' + e.message);
+  }
+}
+
+async function deleteSelectedView() {
+  const sel = document.getElementById('loadViewSel');
+  const id  = sel.value;
+  const name = sel.options[sel.selectedIndex]?.text;
+  if (!id) return;
+  if (!confirm('Delete view "' + (name || id) + '"?')) return;
+  try {
+    await fetch('/chart/configs/' + id + '/delete', {method: 'POST'});
+    await _refreshViewDropdown();
+    setStatus('View deleted.');
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// Populate dropdown on load
+_refreshViewDropdown();
+</script>
+{% endblock %}

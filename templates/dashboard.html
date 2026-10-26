@@ -1,0 +1,12 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+</div>
+
+{% include "partials/status_card.html" %}
+
+{% include "partials/alarms_card.html" %}
+{% endblock %}

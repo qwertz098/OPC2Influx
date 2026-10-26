@@ -1,0 +1,57 @@
+{% for node in nodes %}
+<li class="node node--{{ node.node_class | lower }}" data-node-id="{{ node.node_id }}" data-server="{{ node.server_id }}">
+  <div class="node-header">
+
+    {% if node.node_class in ("Object", "View") or (node.node_class == "Variable" and node.has_children) %}
+
+    {% if node.has_children %}
+    <button class="node-toggle"
+            hx-get="/chart/nodes/{{ node.server_id }}/{{ node.node_id | urlencode }}"
+            hx-vals='{"parent_path": "{{ node.browse_path }}"}'
+            hx-target="#chart-ch-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
+            hx-swap="innerHTML"
+            hx-trigger="click once"
+            hx-indicator="#chart-ind-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
+            onclick="onToggleClick(this)"
+            aria-label="Expand {{ node.display_name }}">▶</button>
+    {% else %}
+    <span class="node-toggle-placeholder"></span>
+    {% endif %}
+
+    <span class="node-icon">📁</span>
+    <span class="node-name">{{ node.display_name }}</span>
+    <span class="node-class text-muted text-xs">{{ node.node_class }}</span>
+    <span class="htmx-indicator spinner" id="chart-ind-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}">⟳</span>
+
+    {% elif node.node_class == "Variable" %}
+
+    <input type="checkbox"
+           class="node-checkbox chart-var-checkbox"
+           onchange="chartVarToggle(this)"
+           data-server="{{ node.server_id | e }}"
+           data-node="{{ node.node_id | e }}"
+           data-path="{{ node.browse_path | e }}"
+           data-name="{{ node.display_name | e }}">
+    <span class="node-icon">📊</span>
+    <span class="node-name">{{ node.display_name }}</span>
+    {% if node.data_type %}
+    <span class="badge badge-dtype badge-dtype--{{ node.data_type | lower }}">{{ node.data_type }}</span>
+    {% endif %}
+
+    {% else %}
+
+    <span class="node-toggle-placeholder"></span>
+    <span class="node-icon">🔷</span>
+    <span class="node-name text-muted">{{ node.display_name }}</span>
+    <span class="node-class text-xs text-muted">{{ node.node_class }}</span>
+
+    {% endif %}
+
+  </div>
+
+  {% if (node.node_class in ("Object", "View") or node.node_class == "Variable") and node.has_children %}
+  <ul class="node-children" id="chart-ch-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"></ul>
+  {% endif %}
+
+</li>
+{% endfor %}
