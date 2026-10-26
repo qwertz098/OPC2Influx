@@ -1,0 +1,147 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>InfluxDB Targets</h1>
+</div>
+
+{% if targets %}
+<div class="card mb-4">
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>URL</th><th>Org / Bucket</th><th>Mode</th><th>Priority</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for t in targets %}
+      {% set status = influx_status.get(t.id) %}
+      <tr class="{% if not t.enabled %}opacity-50{% endif %}">
+        <td>{{ t.display_name }}</td>
+        <td class="mono text-sm">{{ t.url }}</td>
+        <td class="text-sm">{{ t.org }} / {{ t.bucket }}</td>
+        <td><span class="badge badge-mode">{{ t.mode }}</span></td>
+        <td class="text-center">{{ t.priority }}</td>
+        <td>
+          {% if not t.enabled %}
+          <span class="badge badge-warn">Disabled</span>
+          {% elif status and status.connected %}
+          <span class="badge badge-ok">Writing</span>
+          {% elif status and status.last_error %}
+          <span class="badge badge-error" title="{{ status.last_error }}">Error</span>
+          {% else %}
+          <span class="badge badge-info">Ready</span>
+          {% endif %}
+          {% if status and (status.writes_total or status.writes_partial) %}
+          <span class="text-xs text-muted">{{ status.writes_total + status.writes_partial }} points{% if status.writes_partial %} ({{ status.writes_partial }} with field conflicts){% endif %}</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            <button class="btn btn-ghost btn-xs"
+              hx-get="/config/influxdb/{{ t.id }}/test"
+              hx-target="#test-{{ t.id | slugify }}"
+              hx-swap="innerHTML">
+              Test
+            </button>
+            <span id="test-{{ t.id | slugify }}"></span>
+            <button class="btn btn-ghost btn-xs"
+              hx-get="/config/influxdb/{{ t.id }}/edit"
+              hx-target="#edit-{{ t.id | slugify }}"
+              hx-swap="innerHTML">Edit</button>
+            <button class="btn btn-ghost btn-xs"
+              hx-get="/config/influxdb/{{ t.id }}/retention"
+              hx-target="#retention-{{ t.id | slugify }}"
+              hx-swap="innerHTML">Retention</button>
+            <form action="/config/influxdb/{{ t.id }}/toggle" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs">{{ 'Disable' if t.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/config/influxdb/{{ t.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirm('Remove this target?')">
+              <button class="btn btn-danger btn-xs">Remove</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      <tr id="edit-{{ t.id | slugify }}" style="display:none"></tr>
+      <tr id="retention-{{ t.id | slugify }}" style="display:none"></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">Add Target</div>
+  <div class="card-body">
+    <form action="/config/influxdb" method="post">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="input" type="text" name="display_name" value="InfluxDB" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">URL</label>
+          <input class="input" type="text" name="url" value="http://localhost:8086" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Token</label>
+          <select class="select" name="token_source" onchange="var g=this.closest('.form-group');g.querySelector('.token-direct').style.display=this.value==='direct'?'':'none';g.querySelector('.token-env').style.display=this.value==='env'?'':'none'">
+            <option value="direct">Direct token</option>
+            <option value="env">Environment variable</option>
+          </select>
+          <input class="input token-direct" type="password" name="token" autocomplete="off" style="margin-top:4px">
+          <input class="input token-env" type="text" name="token_env_var" placeholder="INFLUXDB_TOKEN" autocomplete="off" style="margin-top:4px;display:none">
+          <span class="form-hint">Direct tokens are stored in plaintext in config/influxdb.yaml.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Organization</label>
+          <input class="input" type="text" name="org" value="myorg" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bucket</label>
+          <input class="input" type="text" name="bucket" value="opcua" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Mode</label>
+          <select class="select" name="mode">
+            <option value="always">Always (fan-out)</option>
+            <option value="failover">Failover</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority</label>
+          <input class="input input-sm" type="number" name="priority" value="1" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Batch Size</label>
+          <input class="input input-sm" type="number" name="batch_size" value="500" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Flush Interval (ms)</label>
+          <input class="input input-sm" type="number" name="flush_interval_ms" value="1000" min="100">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max Retries</label>
+          <input class="input input-sm" type="number" name="max_retries" value="3" min="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+            <input type="checkbox" name="type_suffix" value="1">
+            Type-safe field names
+          </label>
+          <span class="form-hint">Appends the data type to each field name (e.g. <code>value_float</code>, <code>value_bool</code>). Use as a fallback if InfluxDB schema conflicts occur between different data types writing to the same field.</span>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Target</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -21,8 +21,8 @@ htmlcov/
 *.xml
 
 # App runtime data (user-specific config and DB files)
-config/
-data/
+/config/
+/data/
 *.db
 *.db-shm
 *.db-wal

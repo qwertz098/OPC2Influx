@@ -1,0 +1,115 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Alarm Rules</h1>
+</div>
+
+{% if rules %}
+<div class="card mb-4">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Signal</th>
+        <th>Condition</th>
+        <th>Value</th>
+        <th>Cooldown</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rule in rules %}
+      {% set sub = subscriptions | selectattr("id", "equalto", rule.subscription_id) | first | default(None) %}
+      <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
+        <td>{{ rule.name or '—' }}</td>
+        <td class="text-sm">
+          {% if sub %}
+            <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
+            <span class="text-muted text-xs"> · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</span>
+          {% else %}
+            <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
+          {% endif %}
+        </td>
+        <td class="mono text-sm">{{ rule.condition }}</td>
+        <td class="mono text-sm">{{ rule.threshold }}</td>
+        <td class="text-sm">{{ rule.cooldown_seconds }} s</td>
+        <td>
+          <span class="badge {% if rule.enabled %}badge-ok{% else %}badge-mode{% endif %}">
+            {{ 'Active' if rule.enabled else 'Disabled' }}
+          </span>
+        </td>
+        <td class="actions">
+          <button type="button" class="btn btn-ghost btn-xs"
+                  onclick="alarmRuleEdit('{{ rule.id }}')">Edit</button>
+          <form action="/config/alarm-rules/{{ rule.id }}/toggle" method="post" style="display:inline">
+            <button class="btn btn-ghost btn-xs">{{ 'Disable' if rule.enabled else 'Enable' }}</button>
+          </form>
+          <form action="/config/alarm-rules/{{ rule.id }}/delete" method="post" style="display:inline"
+                onsubmit="return confirm('Delete this alarm rule?')">
+            <button class="btn btn-danger btn-xs">Delete</button>
+          </form>
+        </td>
+      </tr>
+      <tr><td id="alarm-edit-cell-{{ rule.id }}" colspan="7" style="padding:0;border:0"></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">Add Alarm Rule</div>
+  <div class="card-body">
+    <form action="/config/alarm-rules" method="post">
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Signal</label>
+          <input class="input" type="text" name="subscription_id" list="subs-datalist"
+                 placeholder="Type to search subscriptions…" required>
+          <datalist id="subs-datalist">
+            {% for sub in subscriptions %}
+            <option value="{{ sub.id }}">{{ sub.display_name or sub.node_id }} · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</option>
+            {% endfor %}
+          </datalist>
+        </div>
+        <div class="form-group" style="flex:0 0 90px">
+          <label class="form-label">Condition</label>
+          <select class="select" name="condition">
+            <option value=">">&gt;</option>
+            <option value="<">&lt;</option>
+            <option value="=">=</option>
+            <option value="<>">&lt;&gt;</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:0 0 120px">
+          <label class="form-label">Value</label>
+          <input class="input" type="text" name="threshold" value="0" required
+                 placeholder="1.5 or true/false">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Name <span class="text-muted text-xs">(optional)</span></label>
+          <input class="input" type="text" name="name" placeholder="High temperature">
+        </div>
+        <div class="form-group" style="flex:0 0 120px">
+          <label class="form-label">Cooldown (s)</label>
+          <input class="input input-sm" type="number" name="cooldown_seconds" value="300" min="1">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Rule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function alarmRuleEdit(id) {
+  fetch('/config/alarm-rules/' + id + '/edit')
+    .then(r => r.text())
+    .then(html => { document.getElementById('alarm-edit-cell-' + id).innerHTML = html; });
+}
+</script>
+{% endblock %}

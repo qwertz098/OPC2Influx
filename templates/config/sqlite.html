@@ -1,0 +1,121 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>SQLite Targets</h1>
+</div>
+
+{% if targets %}
+<div class="card mb-4">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>File Path</th>
+        <th>Interval</th>
+        <th>Status</th>
+        <th>Rows Written</th>
+        <th>Total Rows</th>
+        <th>Last Write</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in targets %}
+      {% set status = sqlite_status.get(t.id) %}
+      <tr class="{% if not t.enabled %}opacity-50{% endif %}">
+        <td>{{ t.display_name }}</td>
+        <td class="mono text-sm">{{ t.file_path }}</td>
+        <td class="text-sm">{{ t.write_interval_seconds }} s</td>
+        <td>
+          {% if not t.enabled %}
+          <span class="badge badge-warn">Disabled</span>
+          {% elif status and status.last_error %}
+          <span class="badge badge-error" title="{{ status.last_error }}">Error</span>
+          {% elif status and status.last_write %}
+          <span class="badge badge-ok">Writing</span>
+          {% else %}
+          <span class="badge badge-info">Ready</span>
+          {% endif %}
+        </td>
+        <td class="text-center">
+          {% if status %}{{ status.rows_written }}{% else %}—{% endif %}
+        </td>
+        <td class="text-center">
+          {% if total_rows.get(t.id) is not none %}{{ total_rows[t.id] }}{% else %}—{% endif %}
+        </td>
+        <td class="text-sm">
+          {% if status and status.last_write %}{{ status.last_write | format_dt }}{% else %}—{% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            <button class="btn btn-ghost btn-xs"
+                    hx-get="/config/sqlite/{{ t.id }}/edit"
+                    hx-target="#edit-{{ t.id | slugify }}"
+                    hx-swap="innerHTML">Edit</button>
+            <a class="btn btn-ghost btn-xs" href="/config/sqlite/{{ t.id }}/export">Export CSV</a>
+            <form action="/config/sqlite/{{ t.id }}/toggle" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs">{{ 'Disable' if t.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/config/sqlite/{{ t.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirm('Remove this SQLite target?')">
+              <button class="btn btn-danger btn-xs">Remove</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      <tr id="edit-{{ t.id | slugify }}" style="display:none"></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">Add SQLite Target</div>
+  <div class="card-body">
+    <form action="/config/sqlite" method="post">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="input" type="text" name="display_name" value="SQLite Log" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">File Path</label>
+          <input class="input" type="text" name="file_path" value="data/opcua_log.db" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Write Interval (seconds)</label>
+          <input class="input input-sm" type="number" name="write_interval_seconds" value="60" min="1" required>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Target</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<a href="/data" class="card mt-4" style="display:flex;align-items:center;gap:.75rem;padding:1rem 1.25rem;text-decoration:none;color:inherit;border:1px solid var(--border);border-radius:8px">
+  <span style="font-size:1.4rem">📊</span>
+  <div>
+    <div style="font-weight:600">Historical Data Viewer</div>
+    <div class="text-muted text-sm">Browse and chart time-series data recorded in these SQLite files</div>
+  </div>
+  <span style="margin-left:auto;font-size:1.1rem;color:var(--muted)">→</span>
+</a>
+
+<div class="card mt-4">
+  <div class="card-header">Schema Info</div>
+  <div class="card-body">
+    <p class="text-sm text-muted">
+      One SQLite table is created per OPC UA server (named after the server's display name).
+      Each table has a <code>time</code> column plus one column per subscription, named
+      <code>{measurement}_{field_name}</code> (dots in measurement replaced by underscores).
+      One row is inserted per server per write interval containing the most recently polled values.
+    </p>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,316 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>OPC UA Servers</h1>
+</div>
+
+{% if servers %}
+{% for srv in servers %}
+{% set status = server_status.get(srv.id) %}
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;gap:10px">
+    <span class="badge {% if status and status.connected %}badge-ok{% else %}badge-error{% endif %}">
+      {{ 'Connected' if (status and status.connected) else 'Disconnected' }}
+    </span>
+    <strong>{{ srv.display_name }}</strong>
+    <span class="mono text-sm text-muted">{{ srv.endpoint_url }}</span>
+    <span style="margin-left:auto" class="actions">
+      <button class="btn btn-ghost btn-xs"
+        hx-get="/config/servers/{{ srv.id }}/test"
+        hx-target="#test-{{ srv.id | slugify }}"
+        hx-swap="innerHTML">Test</button>
+      <span id="test-{{ srv.id | slugify }}"></span>
+      <button class="btn btn-ghost btn-xs"
+        hx-get="/config/servers/{{ srv.id }}/edit"
+        hx-target="#edit-target-{{ srv.id | slugify }}"
+        hx-swap="innerHTML">Edit</button>
+      <form action="/config/servers/{{ srv.id }}/toggle" method="post" style="display:inline">
+        <button class="btn btn-ghost btn-xs">{{ 'Disable' if srv.enabled else 'Enable' }}</button>
+      </form>
+      <form action="/config/servers/{{ srv.id }}/delete" method="post" style="display:inline"
+            onsubmit="return confirm('Remove this server?')">
+        <button class="btn btn-danger btn-xs">Remove</button>
+      </form>
+    </span>
+  </div>
+  {% if status and status.last_error and not status.connected %}
+  <div style="padding:4px 16px;background:#fef2f2;font-size:12px;color:#dc2626">{{ status.last_error[:120] }}</div>
+  {% endif %}
+  <div class="card-body" style="padding-top:8px;padding-bottom:8px">
+    <details>
+      <summary style="cursor:pointer;font-size:13px;color:#64748b;user-select:none">
+        Polling Defaults &nbsp;·&nbsp;
+        {{ interval_label(srv.polling_defaults.interval_ms) }} &nbsp;·&nbsp;
+        {{ srv.polling_defaults.write_mode }}
+        {% if srv.polling_defaults.threshold %} ({{ srv.polling_defaults.threshold }}){% endif %}
+        &nbsp;·&nbsp; heartbeat {{ heartbeat_label(srv.polling_defaults.heartbeat_interval_seconds) }}
+      </summary>
+      <form action="/config/servers/{{ srv.id }}/polling-defaults" method="post" style="margin-top:10px">
+        <div class="form-row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0">
+          <div class="form-group">
+            <label class="form-label">Poll Interval</label>
+            <select class="select select-sm" name="interval_ms">
+              {% for ms, lbl in [(100,"100 ms"),(500,"500 ms"),(1000,"1 s"),(5000,"5 s"),(10000,"10 s"),(60000,"1 min"),(300000,"5 min"),(600000,"10 min")] %}
+              <option value="{{ ms }}" {% if srv.polling_defaults.interval_ms == ms %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Write Mode</label>
+            <select class="select select-sm" name="write_mode">
+              {% for m, lbl in [("always","Always"),("on_change","On change"),("on_change_absolute","Δ absolute"),("on_change_relative","Δ relative %")] %}
+              <option value="{{ m }}" {% if srv.polling_defaults.write_mode == m %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="min-width:80px">
+            <label class="form-label">Threshold</label>
+            <input class="input input-sm" type="number" name="threshold"
+                   value="{{ srv.polling_defaults.threshold }}" step="0.01" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Heartbeat</label>
+            <select class="select select-sm" name="heartbeat_interval_seconds">
+              {% for s, lbl in [(0,"Never"),(10,"10 s"),(60,"1 min"),(600,"10 min"),(3600,"1 h"),(86400,"1 d")] %}
+              <option value="{{ s }}" {% if srv.polling_defaults.heartbeat_interval_seconds == s %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="align-self:flex-end">
+            <button type="submit" class="btn btn-primary btn-xs">Save Defaults</button>
+          </div>
+        </div>
+        <p class="text-xs text-muted" style="margin:6px 0 0">
+          Applied to every new subscription created from the browser for this server.
+        </p>
+      </form>
+    </details>
+  </div>
+  <div style="padding:0 16px 8px;border-top:1px solid var(--border)">
+    <details>
+      <summary style="cursor:pointer;font-size:13px;color:#64748b;user-select:none;padding:6px 0">
+        Static Tags &nbsp;·&nbsp;
+        {% if srv.static_tags %}{{ srv.static_tags | length }} configured{% else %}none{% endif %}
+      </summary>
+      <div style="margin-top:6px">
+        {% if srv.static_tags %}
+        <table class="table" style="margin-bottom:6px">
+          <thead><tr><th>Key</th><th>Value</th><th></th></tr></thead>
+          <tbody>
+          {% for tag in srv.static_tags %}
+          <tr>
+            <td class="mono text-sm">{{ tag.key }}</td>
+            <td class="mono text-sm">{{ tag.value }}</td>
+            <td>
+              <form action="/config/servers/{{ srv.id }}/static-tags/{{ loop.index0 }}/delete" method="post" style="display:inline">
+                <button class="btn btn-ghost btn-xs" style="color:var(--red)">✕</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+        <form action="/config/servers/{{ srv.id }}/static-tags" method="post">
+          <div style="display:flex;gap:6px;align-items:flex-end">
+            <input class="input input-sm" type="text" name="key" placeholder="key" required style="width:110px">
+            <input class="input input-sm" type="text" name="value" placeholder="value" required style="width:130px">
+            <button type="submit" class="btn btn-primary btn-xs">Add</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </div>
+  <div style="padding:0 16px 8px;border-top:1px solid var(--border)">
+    <details>
+      <summary style="cursor:pointer;font-size:13px;color:#64748b;user-select:none;padding:6px 0">
+        Name Strip Prefixes &nbsp;·&nbsp;
+        {% if srv.name_strip_prefixes %}{{ srv.name_strip_prefixes | length }} configured{% else %}none{% endif %}
+      </summary>
+      <p class="text-xs text-muted" style="margin:4px 0 6px">
+        Strings removed from the start of the measurement name before writing to InfluxDB.<br>
+        Example: prefix <code>device.a.b</code> turns <code>device.a.b.c.name</code> → <code>c.name</code>.
+        Applied in list order.
+      </p>
+      <div style="margin-top:4px">
+        <div id="suggest-{{ srv.id | slugify }}"></div>
+        {% if srv.name_strip_prefixes %}
+        <table class="table" style="margin-bottom:6px">
+          <thead><tr><th>Prefix</th><th></th></tr></thead>
+          <tbody>
+          {% for prefix in srv.name_strip_prefixes %}
+          <tr>
+            <td class="mono text-sm">{{ prefix }}</td>
+            <td>
+              <form action="/config/servers/{{ srv.id }}/name-strip-prefixes/{{ loop.index0 }}/delete" method="post" style="display:inline">
+                <button class="btn btn-ghost btn-xs" style="color:var(--red)">✕</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+        <form action="/config/servers/{{ srv.id }}/name-strip-prefixes" method="post"
+              id="strip-prefix-form-{{ srv.id | slugify }}">
+          <div style="display:flex;gap:6px;align-items:flex-end">
+            <input class="input input-sm" type="text" name="prefix" placeholder="device.a.b" required style="width:240px">
+            <button type="submit" class="btn btn-primary btn-xs">Add</button>
+            <button type="button" class="btn btn-ghost btn-xs"
+                    hx-get="/config/servers/{{ srv.id }}/suggest-name-strip-prefix"
+                    hx-target="#suggest-{{ srv.id | slugify }}"
+                    hx-swap="innerHTML">Suggest</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </div>
+  <div id="edit-target-{{ srv.id | slugify }}"></div>
+</div>
+{% endfor %}
+{% endif %}
+
+<div class="card">
+  <div class="card-header">Add Server</div>
+  <div class="card-body">
+    <form action="/config/servers" method="post">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="input" type="text" name="display_name" placeholder="My PLC" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Endpoint URL</label>
+          <input class="input" type="text" name="endpoint_url" placeholder="opc.tcp://192.168.1.10:4840" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Security Mode</label>
+          <select class="select" name="security_mode">
+            <option value="None">None</option>
+            <option value="Sign">Sign</option>
+            <option value="SignAndEncrypt">Sign &amp; Encrypt</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Authentication</label>
+          <select class="select" name="auth_type" onchange="toggleAuthFields(this)">
+            <option value="anonymous">Anonymous</option>
+            <option value="username">Username / Password</option>
+            <option value="certificate">Certificate</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Security Policy</label>
+          <select class="select" name="security_policy">
+            <option value="Basic256Sha256">Basic256Sha256</option>
+            <option value="Aes128Sha256RsaOaep">Aes128Sha256RsaOaep</option>
+            <option value="Aes256Sha256RsaPss">Aes256Sha256RsaPss</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Client Certificate Path</label>
+          <input class="input" type="text" name="certificate_path"  placeholder="/config/certs/client.der">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Private Key Path</label>
+          <input class="input" type="text" name="private_key_path"  placeholder="/config/certs/client.pem">
+        </div>
+      </div>
+      <span class="form-hint">Certificate and key are required for Sign / Sign &amp; Encrypt and for certificate authentication.</span>
+      <div class="form-row" id="auth-fields" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input class="input" type="text" name="username" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="input" type="password" name="password" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reconnect Interval (s)</label>
+        <input class="input input-sm" type="number" name="reconnect_interval" value="10" min="1">
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Server</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function toggleAuthFields(sel) {
+  document.getElementById('auth-fields').style.display = sel.value === 'username' ? '' : 'none';
+}
+
+// Delete name-strip-prefix rows via fetch — removes the <tr> in place
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('button');
+  if (!btn) return;
+  var form = btn.closest('form[action*="/name-strip-prefixes/"][action$="/delete"]');
+  if (!form) return;
+  e.preventDefault();
+  var tr = form.closest('tr');
+  fetch(form.action, {method: 'POST'}).catch(function() {});
+  if (tr) {
+    var tbody = tr.parentElement;
+    tr.remove();
+    // If table is now empty, remove it
+    if (tbody && tbody.querySelectorAll('tr').length === 0) {
+      var table = tbody.closest('table');
+      if (table) table.remove();
+    }
+  }
+});
+
+// Submit name-strip-prefix forms via fetch so the <details> stays open
+document.querySelectorAll('[id^="strip-prefix-form-"]').forEach(function(form) {
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var inp = form.querySelector('[name=prefix]');
+    var prefix = inp.value.trim();
+    if (!prefix) return;
+    fetch(form.action, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'prefix=' + encodeURIComponent(prefix),
+    }).catch(function() {});
+    // Optimistically add to DOM
+    var container = form.closest('[style*="margin-top"]') || form.parentElement;
+    var tbody = container.querySelector('tbody');
+    if (!tbody) {
+      // First prefix — build the table
+      var table = document.createElement('table');
+      table.className = 'table';
+      table.style.marginBottom = '6px';
+      table.innerHTML = '<thead><tr><th>Prefix</th><th></th></tr></thead><tbody></tbody>';
+      form.before(table);
+      tbody = table.querySelector('tbody');
+    }
+    var idx = tbody.querySelectorAll('tr').length;
+    var actionUrl = form.action + '/' + idx + '/delete';
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="mono text-sm">' + prefix.replace(/</g,'&lt;') + '</td>' +
+      '<td><form action="' + actionUrl + '" method="post" style="display:inline">' +
+      '<button class="btn btn-ghost btn-xs" style="color:var(--red)">✕</button></form></td>';
+    tbody.appendChild(tr);
+    inp.value = '';
+    // Update summary count in the <summary> element
+    var details = form.closest('details');
+    if (details) {
+      var summary = details.querySelector('summary');
+      if (summary) {
+        summary.textContent = summary.textContent.replace(/\d+ configured|none/, (tbody.querySelectorAll('tr').length) + ' configured');
+      }
+    }
+  });
+});
+</script>
+{% endblock %}

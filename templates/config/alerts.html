@@ -1,0 +1,401 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Watchdog &amp; Alarm Rules</h1>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form hx-post="/config/alerts" hx-target="#save-result" hx-swap="innerHTML"
+          hx-on::after-request="setTimeout(function(){ document.getElementById('save-result').innerHTML=''; }, 2000);">
+      <h2 class="section-title">Watchdog</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Check Interval (s)</label>
+          <input class="input" type="number" name="check_interval"
+                 value="{{ alerts.watchdog.check_interval_seconds }}" min="5">
+        </div>
+        <div class="form-group">
+          <label class="form-label" title="Wait this long before sending a &quot;lost&quot; alert (hysteresis)">Alert Delay (s)</label>
+          <input class="input" type="number" name="alert_delay"
+                 value="{{ alerts.watchdog.connection_loss_alert_delay_seconds }}" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Recovery Alerts</label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="recovery_alert" value="true"
+                   {% if alerts.watchdog.recovery_alert %}checked{% endif %}>
+            Send email when connection is restored
+          </label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <span id="save-result"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mt-4">
+  <div class="card-header">Alarm Rules</div>
+  <div class="card-body" style="padding:.75rem 1rem">
+
+    {% if rules %}
+    <table class="table" style="margin-bottom:1rem">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Signal</th>
+          <th>Condition</th>
+          <th>Value</th>
+          <th>Delay</th>
+          <th>Cooldown</th>
+          <th>Mode</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in rules %}
+        {% set matched = subscriptions | selectattr("id", "equalto", rule.subscription_id) | list %}
+        {% set sub = matched[0] if matched else None %}
+        <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
+          <td>{{ rule.name or '—' }}</td>
+          <td class="text-sm">
+            {% if sub %}
+              <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
+              <span class="text-muted text-xs"> · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</span>
+            {% else %}
+              <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
+            {% endif %}
+          </td>
+          <td class="mono text-sm">{{ rule.condition }}</td>
+          <td class="mono text-sm">{{ rule.threshold }}</td>
+          <td class="text-sm">
+            {% if rule.alert_delay_seconds %}{{ rule.alert_delay_seconds }} s{% else %}<span class="text-muted text-xs">—</span>{% endif %}
+          </td>
+          <td class="text-sm">
+            {% if rule.latch %}<span class="text-muted text-xs">—</span>{% else %}{{ rule.cooldown_seconds }} s{% endif %}
+          </td>
+          <td>
+            {% if rule.latch %}
+            <span class="badge badge-mode">latch</span>
+            {% else %}
+            <span class="badge badge-mode">repeat</span>
+            {% endif %}
+            {% if rule.send_email %}
+            <span class="text-muted text-xs" title="Email alert enabled">✉</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge {% if rule.enabled %}badge-ok{% else %}badge-mode{% endif %}">
+              {{ 'Active' if rule.enabled else 'Disabled' }}
+            </span>
+          </td>
+          <td class="actions">
+            <button type="button" class="btn btn-ghost btn-xs"
+                    onclick="alarmRuleEdit('{{ rule.id }}')">Edit</button>
+            <form action="/config/alarm-rules/{{ rule.id }}/toggle" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs">{{ 'Disable' if rule.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/config/alarm-rules/{{ rule.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirm('Delete this alarm rule?')">
+              <button class="btn btn-danger btn-xs">Delete</button>
+            </form>
+          </td>
+        </tr>
+        <tr><td id="alarm-edit-cell-{{ rule.id }}" colspan="9" style="padding:0;border:0"></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <form action="/config/alarm-rules" method="post" onsubmit="return validateSubId()">
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Signal</label>
+          <input class="input" type="text" id="sub-display"
+                 placeholder="Type to search subscriptions…"
+                 oninput="filterSubs(this.value)"
+                 onfocus="filterSubs(this.value)"
+                 onblur="setTimeout(closeSubDd,150)"
+                 onkeydown="subKeyNav(event)"
+                 autocomplete="off" required>
+          <input type="hidden" name="subscription_id" id="sub-id-hidden">
+        </div>
+        <div class="form-group" style="flex:0 0 90px">
+          <label class="form-label">Condition</label>
+          <select class="select" name="condition">
+            <option value=">">&gt;</option>
+            <option value="<">&lt;</option>
+            <option value="=">=</option>
+            <option value="<>">&lt;&gt;</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:0 0 120px">
+          <label class="form-label">Value</label>
+          <input class="input" type="text" name="threshold" value="0" required
+                 placeholder="1.5 or true/false">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Name <span class="text-muted text-xs">(optional)</span></label>
+          <input class="input" type="text" name="name" placeholder="High temperature">
+        </div>
+        <div class="form-group" style="flex:0 0 120px">
+          <label class="form-label" title="Min. time before the same rule fires again">Cooldown (s)</label>
+          <input class="input input-sm" type="number" name="cooldown_seconds" value="300" min="1">
+        </div>
+        <div class="form-group" style="flex:0 0 100px">
+          <label class="form-label" title="Condition must hold for this many seconds before alert fires">Delay (s)</label>
+          <input class="input input-sm" type="number" name="alert_delay_seconds" value="0" min="0">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:4px">
+          <label class="checkbox-label">
+            <input type="checkbox" name="latch" value="true">
+            Once (latch)
+          </label>
+          <label class="checkbox-label" style="margin-top:4px">
+            <input type="checkbox" name="send_email" value="true" checked>
+            Send email
+          </label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Rule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mt-4">
+  <div class="card-header">Stale Value Watchdog</div>
+  <div class="card-body" style="padding:.75rem 1rem">
+    <p class="text-sm text-muted mb-3">
+      Alerts when a subscribed signal's value does not change within the selected window —
+      catches a signal that's "frozen" even though the server and subscription are otherwise fine.
+      A full server outage is already covered by the Watchdog above; use
+      <strong>Suppress when server disconnected</strong> to avoid a duplicate alert in that case.
+    </p>
+
+    {% if stale_rules %}
+    <table class="table" style="margin-bottom:1rem">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Signal</th>
+          <th>Window</th>
+          <th>Suppress on Disconnect</th>
+          <th>Mode</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in stale_rules %}
+        {% set matched = subscriptions | selectattr("id", "equalto", rule.subscription_id) | list %}
+        {% set sub = matched[0] if matched else None %}
+        <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
+          <td>{{ rule.name or '—' }}</td>
+          <td class="text-sm">
+            {% if sub %}
+              <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
+              <span class="text-muted text-xs"> · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</span>
+            {% else %}
+              <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
+            {% endif %}
+          </td>
+          <td class="text-sm">{{ interval_label(rule.window_ms) }}</td>
+          <td class="text-sm">{{ 'Yes' if rule.suppress_on_disconnect else 'No' }}</td>
+          <td>
+            {% if rule.send_email %}
+            <span class="text-muted text-xs" title="Email alert enabled">✉</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge {% if rule.enabled %}badge-ok{% else %}badge-mode{% endif %}">
+              {{ 'Active' if rule.enabled else 'Disabled' }}
+            </span>
+          </td>
+          <td class="actions">
+            <button type="button" class="btn btn-ghost btn-xs"
+                    onclick="staleRuleEdit('{{ rule.id }}')">Edit</button>
+            <form action="/config/stale-watchdog/{{ rule.id }}/toggle" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs">{{ 'Disable' if rule.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/config/stale-watchdog/{{ rule.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirm('Delete this stale-value watchdog rule?')">
+              <button class="btn btn-danger btn-xs">Delete</button>
+            </form>
+          </td>
+        </tr>
+        <tr><td id="stale-edit-cell-{{ rule.id }}" colspan="7" style="padding:0;border:0"></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <form action="/config/stale-watchdog" method="post" onsubmit="return validateStaleSubId()">
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Signal</label>
+          <input class="input" type="text" id="stale-sub-display"
+                 placeholder="Type to search subscriptions…"
+                 oninput="filterStaleSubs(this.value)"
+                 onfocus="filterStaleSubs(this.value)"
+                 onblur="setTimeout(closeStaleSubDd,150)"
+                 onkeydown="staleSubKeyNav(event)"
+                 autocomplete="off" required>
+          <input type="hidden" name="subscription_id" id="stale-sub-id-hidden">
+        </div>
+        <div class="form-group" style="flex:0 0 110px">
+          <label class="form-label">Window</label>
+          <select class="select" name="window_ms">
+            {% for ms, lbl in [(100,"100 ms"),(500,"500 ms"),(1000,"1 s"),(5000,"5 s"),(10000,"10 s"),(60000,"1 min"),(300000,"5 min"),(600000,"10 min")] %}
+            <option value="{{ ms }}" {% if ms == 1000 %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Name <span class="text-muted text-xs">(optional)</span></label>
+          <input class="input" type="text" name="name" placeholder="Sensor frozen">
+        </div>
+        <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:4px">
+          <label class="checkbox-label">
+            <input type="checkbox" name="suppress_on_disconnect" value="true" checked>
+            Suppress when server disconnected
+          </label>
+          <label class="checkbox-label" style="margin-top:4px">
+            <input type="checkbox" name="send_email" value="true" checked>
+            Send email
+          </label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Rule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function staleRuleEdit(id) {
+  fetch('/config/stale-watchdog/' + id + '/edit')
+    .then(r => r.text())
+    .then(html => { document.getElementById('stale-edit-cell-' + id).innerHTML = html; });
+}
+
+let _staleSubActive = -1;
+
+function filterStaleSubs(val) {
+  const dd = document.getElementById('stale-sub-dropdown');
+  _staleSubActive = -1;
+  const lower = val.toLowerCase();
+  const matches = _SUBS.filter(s => s.label.toLowerCase().includes(lower)).slice(0, 60);
+  if (!matches.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = matches.map(s =>
+    `<div class="sub-dd-item" data-id="${s.id}"
+          style="padding:6px 10px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+          onmousedown="pickStaleSub(this)"
+          onmouseover="hiSub(this,true)" onmouseout="hiSub(this,false)">${s.label}</div>`
+  ).join('');
+  const inp = document.getElementById('stale-sub-display');
+  const rect = inp.getBoundingClientRect();
+  dd.style.top = (rect.bottom + window.scrollY + 2) + 'px';
+  dd.style.left = rect.left + 'px';
+  dd.style.width = rect.width + 'px';
+  dd.style.display = 'block';
+}
+function closeStaleSubDd() { document.getElementById('stale-sub-dropdown').style.display = 'none'; }
+function pickStaleSub(el) {
+  document.getElementById('stale-sub-display').value = el.textContent;
+  document.getElementById('stale-sub-id-hidden').value = el.dataset.id;
+  document.getElementById('stale-sub-display').setCustomValidity('');
+  document.getElementById('stale-sub-dropdown').style.display = 'none';
+}
+function staleSubKeyNav(e) {
+  const dd = document.getElementById('stale-sub-dropdown');
+  const items = [...dd.querySelectorAll('.sub-dd-item')];
+  if (e.key === 'Escape') { dd.style.display = 'none'; return; }
+  if (e.key === 'ArrowDown') { e.preventDefault(); _staleSubActive = Math.min(_staleSubActive + 1, items.length - 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _staleSubActive = Math.max(_staleSubActive - 1, 0); }
+  else if (e.key === 'Enter' && _staleSubActive >= 0) { e.preventDefault(); pickStaleSub(items[_staleSubActive]); return; }
+  items.forEach((it, i) => { hiSub(it, i === _staleSubActive); if (i === _staleSubActive) it.scrollIntoView({block:'nearest'}); });
+}
+function validateStaleSubId() {
+  if (!document.getElementById('stale-sub-id-hidden').value) {
+    document.getElementById('stale-sub-display').setCustomValidity('Select a signal from the list');
+    document.getElementById('stale-sub-display').reportValidity();
+    return false;
+  }
+  return true;
+}
+</script>
+
+<div id="stale-sub-dropdown" style="display:none;position:absolute;z-index:200;
+     background:var(--surface,#fff);border:1px solid var(--border,#ddd);border-radius:4px;
+     max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>
+
+<script>
+function alarmRuleEdit(id) {
+  fetch('/config/alarm-rules/' + id + '/edit')
+    .then(r => r.text())
+    .then(html => { document.getElementById('alarm-edit-cell-' + id).innerHTML = html; });
+}
+
+const _SUBS = [{% for sub in subscriptions %}{id:{{ sub.id | tojson }},label:{{ ((sub.display_name or sub.node_id) + ' · ' + sub.influxdb.measurement + '.' + sub.influxdb.field_name) | tojson }}},{% endfor %}];
+let _subActive = -1;
+
+function filterSubs(val) {
+  const dd = document.getElementById('sub-dropdown');
+  _subActive = -1;
+  const lower = val.toLowerCase();
+  const matches = _SUBS.filter(s => s.label.toLowerCase().includes(lower)).slice(0, 60);
+  if (!matches.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = matches.map(s =>
+    `<div class="sub-dd-item" data-id="${s.id}"
+          style="padding:6px 10px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+          onmousedown="pickSub(this)"
+          onmouseover="hiSub(this,true)" onmouseout="hiSub(this,false)">${s.label}</div>`
+  ).join('');
+  // Position below the input — same pattern as chart dropdown
+  const inp = document.getElementById('sub-display');
+  const rect = inp.getBoundingClientRect();
+  dd.style.top = (rect.bottom + window.scrollY + 2) + 'px';
+  dd.style.left = rect.left + 'px';
+  dd.style.width = rect.width + 'px';
+  dd.style.display = 'block';
+}
+function closeSubDd() { document.getElementById('sub-dropdown').style.display = 'none'; }
+function hiSub(el, on) { el.style.background = on ? 'var(--accent,#3b82f6)' : ''; el.style.color = on ? '#fff' : ''; }
+function pickSub(el) {
+  document.getElementById('sub-display').value = el.textContent;
+  document.getElementById('sub-id-hidden').value = el.dataset.id;
+  document.getElementById('sub-display').setCustomValidity('');
+  document.getElementById('sub-dropdown').style.display = 'none';
+}
+function subKeyNav(e) {
+  const dd = document.getElementById('sub-dropdown');
+  const items = [...dd.querySelectorAll('.sub-dd-item')];
+  if (e.key === 'Escape') { dd.style.display = 'none'; return; }
+  if (e.key === 'ArrowDown') { e.preventDefault(); _subActive = Math.min(_subActive + 1, items.length - 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _subActive = Math.max(_subActive - 1, 0); }
+  else if (e.key === 'Enter' && _subActive >= 0) { e.preventDefault(); pickSub(items[_subActive]); return; }
+  items.forEach((it, i) => { hiSub(it, i === _subActive); if (i === _subActive) it.scrollIntoView({block:'nearest'}); });
+}
+function validateSubId() {
+  if (!document.getElementById('sub-id-hidden').value) {
+    document.getElementById('sub-display').setCustomValidity('Select a signal from the list');
+    document.getElementById('sub-display').reportValidity();
+    return false;
+  }
+  return true;
+}
+</script>
+
+<div id="sub-dropdown" style="display:none;position:absolute;z-index:200;
+     background:var(--surface,#fff);border:1px solid var(--border,#ddd);border-radius:4px;
+     max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>
+{% endblock %}

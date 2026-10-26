@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Application Settings</h1>
+</div>
+
+<!-- Site Identity -->
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="post" action="/config/settings">
+      <h2 class="section-title">Site Identity</h2>
+      <div class="form-row">
+        <div class="form-group" style="max-width:360px">
+          <label class="form-label">Site Name</label>
+          {% if site_name_env %}
+          <input class="input" type="text" value="{{ site_name_env }}" disabled
+                 title="Set via SITE_NAME environment variable — edit the env var to change">
+          <p class="text-xs text-muted mt-1">
+            Overridden by env var <code>SITE_NAME={{ site_name_env }}</code>.
+            Remove the env var to use the value below.
+          </p>
+          {% else %}
+          <input class="input" type="text" name="site_name" value="{{ cfg.site_name }}"
+                 placeholder="e.g. Plant North, Building A, Test Lab…" maxlength="80">
+          <p class="text-xs text-muted mt-1">
+            Shown in the browser tab title and prefixed in alert email subjects.
+            Leave blank for no prefix.<br>
+            Docker / systemd: set <code>SITE_NAME=…</code> env var instead (takes precedence).
+          </p>
+          {% endif %}
+        </div>
+      </div>
+      {% if not site_name_env %}
+      <div class="form-actions mt-4">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<!-- Dynamic Folder Auto-Subscribe -->
+<div class="card mb-4">
+  <div class="card-body">
+    <form hx-post="/config/settings/dynamic-folder-types" hx-target="#dtype-save-result" hx-swap="innerHTML"
+          hx-on::after-request="setTimeout(function(){ document.getElementById('dtype-save-result').innerHTML=''; }, 2000);">
+      <h2 class="section-title">Dynamic Folder Auto-Subscribe</h2>
+      <p class="text-sm text-muted mb-3">
+        Which OPC UA data types dynamic folder watchers should automatically subscribe to.
+        Deselect types you never want recorded. Structs, arrays, and other non-scalar types
+        are never auto-subscribed regardless of this setting — they have no direct
+        InfluxDB/SQLite representation.
+      </p>
+      <div class="form-row" style="flex-wrap:wrap;gap:.5rem 1.5rem">
+        {% for t in dynamic_folder_type_choices %}
+        <label class="checkbox-label" style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+          <input type="checkbox" name="dtype_{{ t }}" value="1"
+                 {% if t in cfg.dynamic_folder_allowed_types %}checked{% endif %}>
+          {{ t }}
+        </label>
+        {% endfor %}
+      </div>
+      <p class="text-xs text-muted mt-2">
+        DateTime is off by default — the app cannot currently write datetime values to
+        InfluxDB/SQLite, so subscribing to them would only create subscriptions that never record data.
+      </p>
+      <div class="form-actions mt-4">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <span id="dtype-save-result"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- SMTP Email -->
+<div class="card mb-4">
+  <div class="card-body">
+    <form hx-post="/config/settings/smtp" hx-target="#smtp-save-result" hx-swap="innerHTML"
+          hx-on::after-request="setTimeout(function(){ document.getElementById('smtp-save-result').innerHTML=''; }, 2000);">
+      <h2 class="section-title">Email (SMTP)</h2>
+      {% macro env_hint(field, var) %}
+        {% if field in smtp_env %}<p class="text-xs text-muted mt-1">Overridden by env var <code>{{ var }}{% if field != 'password' %}={{ smtp_env[field] }}{% endif %}</code>.</p>{% endif %}
+      {% endmacro %}
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+            <input type="checkbox" name="smtp_enabled" value="true" {% if alerts.smtp.enabled %}checked{% endif %}>
+            Enable email sending
+          </label>
+          <span class="form-hint">Master switch for Watchdog and Alarm Rule notifications. When off, no email is sent regardless of other settings — Send Test Email still works so you can verify configuration.</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">SMTP Host</label>
+          <input class="input" type="text" name="smtp_host" value="{{ alerts.smtp.host }}" placeholder="smtp.example.com"
+                 {% if 'host' in smtp_env %}disabled title="Set via SMTP_HOST env var"{% endif %}>
+          {{ env_hint('host', 'SMTP_HOST') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Port</label>
+          <input class="input input-sm" type="number" name="smtp_port" value="{{ alerts.smtp.port }}"
+                 {% if 'port' in smtp_env %}disabled title="Set via SMTP_PORT env var"{% endif %}>
+          {{ env_hint('port', 'SMTP_PORT') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">STARTTLS</label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="smtp_tls" value="true" {% if alerts.smtp.tls %}checked{% endif %}
+                   {% if 'tls' in smtp_env %}disabled title="Set via SMTP_TLS env var"{% endif %}>
+            Enable STARTTLS
+          </label>
+          {{ env_hint('tls', 'SMTP_TLS') }}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input class="input" type="text" name="smtp_username" value="{{ alerts.smtp.username }}" autocomplete="username"
+                 {% if 'username' in smtp_env %}disabled title="Set via SMTP_USERNAME env var"{% endif %}>
+          {{ env_hint('username', 'SMTP_USERNAME') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="input" type="password" name="smtp_password" value="" placeholder="{% if alerts.smtp.password %}Leave blank to keep current{% endif %}" autocomplete="new-password"
+                 {% if 'password' in smtp_env %}disabled title="Set via SMTP_PASSWORD env var"{% endif %}>
+          {{ env_hint('password', 'SMTP_PASSWORD') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">From Address</label>
+          <input class="input" type="email" name="smtp_from" value="{{ alerts.smtp.from_address }}" placeholder="alerts@example.com"
+                 {% if 'from_address' in smtp_env %}disabled title="Set via SMTP_FROM env var"{% endif %}>
+          {{ env_hint('from_address', 'SMTP_FROM') }}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">To Addresses (one per line)</label>
+        <textarea class="input" name="to_addresses" rows="3" placeholder="operator@example.com"
+                  {% if 'to_addresses' in smtp_env %}disabled title="Set via SMTP_TO env var"{% endif %}>{{ alerts.smtp.to_addresses | join('\n') }}</textarea>
+        {% if 'to_addresses' in smtp_env %}<p class="text-xs text-muted mt-1">Overridden by env var <code>SMTP_TO={{ smtp_env['to_addresses'] }}</code> (comma-separated).</p>{% endif %}
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <span id="smtp-save-result"></span>
+        <button type="button" class="btn btn-secondary"
+          hx-post="/config/alerts/test"
+          hx-target="#test-result"
+          hx-swap="innerHTML"
+          hx-indicator="#test-spinner"
+          hx-disabled-elt="this">
+          Send Test Email
+        </button>
+        <span id="test-spinner" class="htmx-indicator badge badge-info">⏳ Sending…</span>
+        <span id="test-result"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Backup & Restore -->
+<div class="card mb-4">
+  <div class="card-body">
+    <h2 class="section-title">Backup &amp; Restore</h2>
+    <p class="text-sm text-muted mb-3">
+      Download all configuration as a ZIP archive (servers, subscriptions, targets, alerts, tags, saved chart views, dynamic folders).
+    </p>
+    <a href="/config/backup" class="btn btn-primary" style="margin-right:.5rem">Download config.zip</a>
+
+    <div style="margin-top:1.5rem">
+      <div class="alert alert-warn mb-3">
+        <strong>Warning:</strong> Restoring overwrites all configuration and restarts services.
+      </div>
+      <form action="/config/restore" method="post" enctype="multipart/form-data">
+        <div class="form-group mb-3" style="max-width:360px">
+          <label class="form-label">Restore from ZIP</label>
+          <input class="input" type="file" name="file" accept=".zip" required>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-danger"
+                  onclick="return confirm('This will overwrite all configuration. Continue?')">
+            Restore Configuration
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

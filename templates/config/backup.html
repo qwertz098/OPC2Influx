@@ -1,0 +1,41 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Configuration Backup &amp; Restore</h1>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Download Backup</div>
+  <div class="card-body">
+    <p class="text-sm text-muted mb-3">
+      Download all configuration files as a single ZIP archive. The archive includes:
+      servers, subscriptions, subscription groups, InfluxDB targets, SQLite targets, alerts, and tags.
+    </p>
+    <a href="/config/backup" class="btn btn-primary">Download config.zip</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Restore from Backup</div>
+  <div class="card-body">
+    <div class="alert alert-warn mb-3">
+      <strong>Warning:</strong> Restoring overwrites all configuration and restarts services.
+      Ensure the ZIP file was created by this application.
+    </div>
+    <form action="/config/restore" method="post" enctype="multipart/form-data">
+      <div class="form-group mb-3">
+        <label class="form-label">Backup ZIP File</label>
+        <input class="input" type="file" name="file" accept=".zip" required>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-danger"
+                onclick="return confirm('This will overwrite all configuration. Continue?')">
+          Restore Configuration
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

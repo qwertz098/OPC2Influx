@@ -1,0 +1,188 @@
+﻿{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Central Tags</h1>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">Configured Tags</div>
+  <div class="card-body" style="padding:0">
+    {% if tags %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Short Name</th>
+          <th>Key</th>
+          <th>Type</th>
+          <th>Value / Path</th>
+          <th>Default Active</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for tag in tags %}
+      <tr>
+        <td>{{ tag.name }}</td>
+        <td><span class="badge badge-mode {% if tag.is_dynamic %}text-italic{% endif %}">{{ tag.short_name }}</span></td>
+        <td class="mono text-sm">{{ tag.key }}</td>
+        <td class="text-sm">{{ 'Dynamic' if tag.is_dynamic else 'Static' }}</td>
+        <td class="mono text-sm text-muted">
+          {% if tag.is_dynamic %}{{ tag.relative_path }}{% else %}{{ tag.static_value }}{% endif %}
+        </td>
+        <td class="text-center">
+          {% if tag.default_active %}
+          <span class="badge badge-ok">Yes</span>
+          {% else %}
+          <span class="badge badge-mode">No</span>
+          {% endif %}
+        </td>
+        <td class="actions">
+          <button type="button" class="btn btn-ghost btn-xs"
+                  onclick="toggleEditRow('tag-edit-{{ tag.id }}')">Edit</button>
+          <form action="/config/tags/{{ tag.id }}/delete" method="post" style="display:inline"
+                onsubmit="return confirm('Delete tag {{ tag.name }}?')">
+            <button class="btn btn-danger btn-xs">Delete</button>
+          </form>
+        </td>
+      </tr>
+      <tr id="tag-edit-{{ tag.id }}" style="display:none">
+        <td colspan="7" style="padding:10px 12px;background:#f8fafc;border-top:none">
+          <form action="/config/tags/{{ tag.id }}/update" method="post">
+            <div class="form-row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0">
+              <div class="form-group">
+                <label class="form-label">Display Name</label>
+                <input class="input input-sm" type="text" name="name" value="{{ tag.name }}" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Short Name</label>
+                <input class="input input-sm" type="text" name="short_name" value="{{ tag.short_name }}" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tag Key</label>
+                <input class="input input-sm" type="text" name="key" value="{{ tag.key }}" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Type</label>
+                <select class="select select-sm" name="is_dynamic"
+                        onchange="toggleTagFields(this, 'edit-{{ tag.id }}')">
+                  <option value="false" {% if not tag.is_dynamic %}selected{% endif %}>Static</option>
+                  <option value="true" {% if tag.is_dynamic %}selected{% endif %}>Dynamic</option>
+                </select>
+              </div>
+              <div class="form-group" id="edit-{{ tag.id }}-static-group"
+                   style="{% if tag.is_dynamic %}display:none{% endif %}">
+                <label class="form-label">Static Value</label>
+                <input class="input input-sm" type="text" name="static_value" value="{{ tag.static_value }}">
+              </div>
+              <div class="form-group" id="edit-{{ tag.id }}-dynamic-group"
+                   style="{% if not tag.is_dynamic %}display:none{% endif %}">
+                <label class="form-label">Relative Path</label>
+                <input class="input input-sm" type="text" name="relative_path" value="{{ tag.relative_path }}"
+                       placeholder="../RecipeName">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Default Active</label>
+                <select class="select select-sm" name="default_active">
+                  <option value="true" {% if tag.default_active %}selected{% endif %}>Yes</option>
+                  <option value="false" {% if not tag.default_active %}selected{% endif %}>No</option>
+                </select>
+              </div>
+              <div class="form-group" style="align-self:flex-end">
+                <button type="submit" class="btn btn-primary btn-xs">Save</button>
+                <button type="button" class="btn btn-ghost btn-xs"
+                        onclick="toggleEditRow('tag-edit-{{ tag.id }}')">Cancel</button>
+              </div>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-center text-muted" style="padding:24px">
+      <p>No tags configured yet.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Add Tag</div>
+  <div class="card-body">
+    <form action="/config/tags" method="post" id="add-tag-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="input" type="text" name="name" placeholder="Production Line" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Short Name <span class="text-muted text-xs">(button label)</span></label>
+          <input class="input" type="text" name="short_name" placeholder="line" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">InfluxDB Tag Key</label>
+          <input class="input" type="text" name="key" placeholder="line" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select class="select" name="is_dynamic" onchange="toggleTagFields(this, 'add')">
+            <option value="false">Static</option>
+            <option value="true">Dynamic (read from OPC UA)</option>
+          </select>
+        </div>
+        <div class="form-group" id="add-static-group">
+          <label class="form-label">Static Value</label>
+          <input class="input" type="text" name="static_value" placeholder="line_1">
+        </div>
+        <div class="form-group" id="add-dynamic-group" style="display:none">
+          <label class="form-label">
+            Relative Path
+            <span class="text-muted text-xs" title="Examples:&#10;./tagName — sibling node&#10;../tagName — parent's sibling&#10;../../Sub2/tagName — 2 levels up then descend">🛈</span>
+          </label>
+          <input class="input" type="text" name="relative_path" placeholder="../RecipeName">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Default Active</label>
+          <select class="select" name="default_active">
+            <option value="true">Yes</option>
+            <option value="false" selected>No</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add Tag</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mt-3" style="background:var(--surface-2,#f8fafc)">
+  <div class="card-body text-sm text-muted">
+    <strong>Relative path syntax</strong> (for dynamic tags):
+    <ul style="margin:6px 0 0 16px;line-height:1.8">
+      <li><code>./tagName</code> — sibling of the subscribed node (same parent)</li>
+      <li><code>../tagName</code> — uncle node (one level up, then descend)</li>
+      <li><code>../../Sub2/tagName</code> — go up 2 levels then descend into Sub2/tagName</li>
+    </ul>
+    Dynamic tag values are resolved once on first poll and cached until the subscription is modified.
+  </div>
+</div>
+
+<script>
+function toggleEditRow(id) {
+  var row = document.getElementById(id);
+  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+function toggleTagFields(sel, prefix) {
+  const isDyn = sel.value === 'true';
+  document.getElementById(prefix + '-static-group').style.display = isDyn ? 'none' : '';
+  document.getElementById(prefix + '-dynamic-group').style.display = isDyn ? '' : 'none';
+}
+</script>
+{% endblock %}
