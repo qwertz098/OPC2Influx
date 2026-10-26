@@ -8,6 +8,12 @@ permissions:
   contents: write
   packages: write
 
+# A tag that is moved and re-pushed cancels the still-running build of its
+# old commit, so a stale image can never overwrite the newer one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ghcr:
     runs-on: ubuntu-latest
