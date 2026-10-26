@@ -76,8 +76,7 @@ def _load_yaml(path: Path) -> dict:
     if not path.exists():
         return {}
     with path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    return resolve_env(data)
+        return yaml.safe_load(f) or {}
 
 
 def _save_yaml(path: Path, data: dict) -> None:
@@ -223,6 +222,48 @@ class SmtpConfig(BaseModel):
     password: str = ""
     from_address: str = ""
     to_addresses: list[str] = []
+
+
+SMTP_ENV_KEYS = {
+    "host":         "SMTP_HOST",
+    "port":         "SMTP_PORT",
+    "tls":          "SMTP_TLS",
+    "username":     "SMTP_USERNAME",
+    "password":     "SMTP_PASSWORD",
+    "from_address": "SMTP_FROM",
+    "to_addresses": "SMTP_TO",
+}
+
+
+def smtp_env_overrides() -> dict:
+    """Return a dict of SmtpConfig field → raw env value for every set SMTP env var."""
+    result = {}
+    for field, var in SMTP_ENV_KEYS.items():
+        val = os.environ.get(var, "").strip()
+        if val:
+            result[field] = val
+    return result
+
+
+def effective_smtp(smtp: SmtpConfig) -> SmtpConfig:
+    """Copy of `smtp` with env overrides and ${VAR} placeholders applied — never persist it."""
+    eff = SmtpConfig(**resolve_env(smtp.model_dump()))
+    overrides = smtp_env_overrides()
+    if "host" in overrides:
+        eff.host = overrides["host"]
+    if "port" in overrides:
+        eff.port = int(overrides["port"])
+    if "tls" in overrides:
+        eff.tls = overrides["tls"].lower() in ("true", "1", "yes")
+    if "username" in overrides:
+        eff.username = overrides["username"]
+    if "password" in overrides:
+        eff.password = overrides["password"]
+    if "from_address" in overrides:
+        eff.from_address = overrides["from_address"]
+    if "to_addresses" in overrides:
+        eff.to_addresses = [a.strip() for a in overrides["to_addresses"].split(",") if a.strip()]
+    return eff
 
 
 class AlertsConfig(BaseModel):

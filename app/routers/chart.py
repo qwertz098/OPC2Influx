@@ -143,7 +143,7 @@ async def read_nodes(request: Request, state: RuntimeState = Depends(get_state))
     cached: dict[tuple[str, str], float] = {}
     engine = state.polling_engine
     if engine is not None:
-        lv = engine._last_values  # {sub.id: raw_value}
+        lv = engine.live_values()  # {sub.id: raw_value}
         for sub in state.config.subscriptions.subscriptions:
             if sub.id in lv:
                 raw = lv[sub.id]

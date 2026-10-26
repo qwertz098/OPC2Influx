@@ -255,7 +255,8 @@ async def test_sqlite_writer_wal_index_and_columns(tmp_path):
     srv = ServerConfig(id="srv1", display_name="Line 1", endpoint_url="opc.tcp://x")
     sub1 = _sub("srv1", "ns=2;s=a")
     state = _make_state(tmp_path, servers=[srv], subscriptions=[sub1])
-    state.polling_engine = SimpleNamespace(_last_values={sub1.id: 3.14})
+    live = {sub1.id: 3.14}
+    state.polling_engine = SimpleNamespace(live_values=lambda: live)
 
     target = SQLiteTargetConfig(file_path=str(tmp_path / "snap.db"), write_interval_seconds=1)
     writer = SQLiteWriter(target, state)
@@ -275,7 +276,7 @@ async def test_sqlite_writer_wal_index_and_columns(tmp_path):
         sub2 = _sub("srv1", "ns=2;s=b")
         sub2.influxdb.measurement = "other_measurement"
         state.config.subscriptions.subscriptions.append(sub2)
-        state.polling_engine._last_values[sub2.id] = 99
+        live[sub2.id] = 99
         await writer._snapshot()
         assert writer._db is db, "connection must be reused across snapshots"
 

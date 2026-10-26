@@ -49,15 +49,13 @@ class InfluxTargetWriter:
         self._queue: asyncio.Queue[WritePoint] = asyncio.Queue(maxsize=5000)
         self._task: asyncio.Task | None = None
         self._client: InfluxDBClientAsync | None = None
-        # Snapshot of connection params at creation — used to detect config changes
-        self._conn_snapshot = (cfg.url, resolve_env(cfg.token), cfg.org, cfg.bucket)
+        # Snapshot of all settings at creation — used to detect config changes
+        self._snapshot = (cfg.model_dump(), resolve_env(cfg.token))
         # Rate-limit repeated schema-conflict log messages (log at most once per 60 s)
         self._last_schema_warn: float = 0.0
 
-    def connection_changed(self) -> bool:
-        return self._conn_snapshot != (
-            self.cfg.url, resolve_env(self.cfg.token), self.cfg.org, self.cfg.bucket
-        )
+    def config_changed(self, cfg: InfluxTargetConfig) -> bool:
+        return self._snapshot != (cfg.model_dump(), resolve_env(cfg.token))
 
     def _resolve_token(self) -> str:
         try:
@@ -277,8 +275,8 @@ class InfluxWriterPool:
                 self._state.influx_status.pop(tid, None)
 
         for tid, cfg in configured.items():
-            if tid in self._writers and self._writers[tid].connection_changed():
-                # Connection params changed (e.g. new token) — restart writer
+            if tid in self._writers and self._writers[tid].config_changed(cfg):
+                # Settings changed (edit or backup restore) — restart writer
                 await self._writers[tid].stop()
                 del self._writers[tid]
             if tid not in self._writers:
@@ -317,9 +315,10 @@ class InfluxWriterPool:
             # Check if all always targets are down → activate failover
             all_always_down = all(not w.status.connected for w in always_writers)
             if all_always_down and failover_writers:
-                await failover_writers[0].enqueue(point)
+                await self._first_available(failover_writers).enqueue(point)
         elif failover_writers:
-            # No always targets — use first available failover
-            for w in failover_writers:
-                await w.enqueue(point)
-                break
+            await self._first_available(failover_writers).enqueue(point)
+
+    @staticmethod
+    def _first_available(writers: list[InfluxTargetWriter]) -> InfluxTargetWriter:
+        return next((w for w in writers if w.status.connected), writers[0])

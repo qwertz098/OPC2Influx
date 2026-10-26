@@ -10,7 +10,7 @@ from typing import Any
 from asyncua import Client, ua
 from asyncua.common.node import Node
 
-from app.config import ServerConfig, ServerAuth
+from app.config import ServerConfig, ServerAuth, resolve_env_strict
 from app.state import RuntimeState, ServerStatus
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ class OpcUaClientManager:
         # client session, so the per-server cache must be dropped whenever
         # that client is replaced or disconnected.
         self._node_cache: dict[str, dict[str, Node]] = {}
+        self._conn_keys: dict[str, tuple] = {}
         # Separate, lazily-connected session used only for browsing (Browser
         # tab tree, dynamic folder scans). Keeping this off the main session
         # means a slow/stuck Browse call can never starve or be starved by
@@ -41,6 +42,7 @@ class OpcUaClientManager:
     async def start_all(self) -> None:
         for srv in self._state.config.servers.servers:
             if srv.enabled:
+                self._conn_keys[srv.id] = self._conn_key(srv)
                 self._state.server_status[srv.id] = ServerStatus()
                 self._reconnect_tasks[srv.id] = asyncio.create_task(
                     self._connect_loop(srv), name=f"opcua-connect-{srv.id}"
@@ -65,12 +67,22 @@ class OpcUaClientManager:
         self._browse_clients.clear()
         self._browse_locks.clear()
 
-    async def reconcile(self) -> None:
-        """Called when server config changes. Adds new, removes deleted servers."""
-        configured_ids = {s.id for s in self._state.config.servers.servers if s.enabled}
-        current_ids = set(self._reconnect_tasks.keys())
+    @staticmethod
+    def _conn_key(srv: ServerConfig) -> tuple:
+        return (srv.endpoint_url, srv.security_mode, srv.security_policy,
+                srv.auth.model_dump(), srv.session_timeout_ms)
 
-        for sid in current_ids - configured_ids:
+    async def reconcile(self) -> None:
+        """Called when server config changes. Adds new, removes deleted, restarts changed servers."""
+        configured = {s.id: s for s in self._state.config.servers.servers if s.enabled}
+        current_ids = set(self._reconnect_tasks.keys())
+        changed = {
+            sid for sid in current_ids & set(configured)
+            if self._conn_keys.get(sid) != self._conn_key(configured[sid])
+        }
+
+        for sid in (current_ids - set(configured)) | changed:
+            self._conn_keys.pop(sid, None)
             self._reconnect_tasks[sid].cancel()
             self._reconnect_tasks.pop(sid, None)
             client = self._clients.pop(sid, None)
@@ -91,6 +103,7 @@ class OpcUaClientManager:
 
         for srv in self._state.config.servers.servers:
             if srv.enabled and srv.id not in self._reconnect_tasks:
+                self._conn_keys[srv.id] = self._conn_key(srv)
                 self._state.server_status[srv.id] = ServerStatus()
                 self._reconnect_tasks[srv.id] = asyncio.create_task(
                     self._connect_loop(srv), name=f"opcua-connect-{srv.id}"
@@ -104,7 +117,7 @@ class OpcUaClientManager:
         status = self._state.server_status[srv.id]
         while True:
             try:
-                client = self._make_client(srv)
+                client = await self._make_client(srv)
                 await client.connect()
                 self._node_cache.pop(srv.id, None)
                 self._clients[srv.id] = client
@@ -156,14 +169,29 @@ class OpcUaClientManager:
                 logger.warning("OPC UA session lost for %s: %s", server_id, exc)
                 return
 
-    def _make_client(self, srv: ServerConfig) -> Client:
+    async def _make_client(self, srv: ServerConfig) -> Client:
         client = Client(
             url=srv.endpoint_url,
             timeout=srv.session_timeout_ms / 1000,
         )
-        if srv.auth.type == "username":
-            client.set_user(srv.auth.username)
-            client.set_password(srv.auth.password)
+        auth = srv.auth
+        if srv.security_mode != "None" or auth.type == "certificate":
+            if not auth.certificate_path or not auth.private_key_path:
+                raise ValueError(
+                    f"Security mode '{srv.security_mode}' / auth '{auth.type}' needs a "
+                    f"client certificate and private key path"
+                )
+        if srv.security_mode != "None":
+            await client.set_security_string(
+                f"{srv.security_policy},{srv.security_mode},"
+                f"{auth.certificate_path},{auth.private_key_path}"
+            )
+        if auth.type == "username":
+            client.set_user(resolve_env_strict(auth.username))
+            client.set_password(resolve_env_strict(auth.password))
+        elif auth.type == "certificate":
+            await client.load_client_certificate(auth.certificate_path)
+            await client.load_private_key(auth.private_key_path)
         return client
 
     # ------------------------------------------------------------------
@@ -195,7 +223,7 @@ class OpcUaClientManager:
             if srv is None:
                 return self._clients.get(server_id)
             try:
-                client = self._make_client(srv)
+                client = await self._make_client(srv)
                 await client.connect()
                 self._browse_clients[server_id] = client
                 return client

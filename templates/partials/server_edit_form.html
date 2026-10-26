@@ -26,9 +26,29 @@
           <select class="select" name="auth_type" onchange="toggleAuthFields(this)">
             <option value="anonymous" {% if srv.auth.type == 'anonymous' %}selected{% endif %}>Anonymous</option>
             <option value="username"  {% if srv.auth.type == 'username'  %}selected{% endif %}>Username / Password</option>
+            <option value="certificate" {% if srv.auth.type == 'certificate' %}selected{% endif %}>Certificate</option>
           </select>
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Security Policy</label>
+          <select class="select" name="security_policy">
+            <option value="Basic256Sha256" {% if srv.security_policy == 'Basic256Sha256' %}selected{% endif %}>Basic256Sha256</option>
+            <option value="Aes128Sha256RsaOaep" {% if srv.security_policy == 'Aes128Sha256RsaOaep' %}selected{% endif %}>Aes128Sha256RsaOaep</option>
+            <option value="Aes256Sha256RsaPss" {% if srv.security_policy == 'Aes256Sha256RsaPss' %}selected{% endif %}>Aes256Sha256RsaPss</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Client Certificate Path</label>
+          <input class="input" type="text" name="certificate_path" value="{{ srv.auth.certificate_path }}" placeholder="/config/certs/client.der">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Private Key Path</label>
+          <input class="input" type="text" name="private_key_path" value="{{ srv.auth.private_key_path }}" placeholder="/config/certs/client.pem">
+        </div>
+      </div>
+      <span class="form-hint">Certificate and key are required for Sign / Sign &amp; Encrypt and for certificate authentication.</span>
       <div class="form-row" id="auth-fields-edit-{{ srv.id }}"
            style="{{ '' if srv.auth.type == 'username' else 'display:none' }}">
         <div class="form-group">

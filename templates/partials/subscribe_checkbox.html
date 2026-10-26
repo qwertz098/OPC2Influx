@@ -8,7 +8,7 @@
        {% if locked %}disabled data-dyn-locked="1"
        title="Managed by a dynamic folder watcher — release the watcher (✕⟳) on the folder to change subscriptions manually"
        {% else %}hx-post="/browser/{% if subscribed %}unsubscribe{% else %}subscribe{% endif %}"
-       hx-vals='{"node_id": "{{ node.node_id | e }}", "server_id": "{{ node.server_id | e }}", "browse_path": "{{ node.browse_path | e }}", "display_name": "{{ node.display_name | e }}"{% if subscribed %}, "sub_id": "{{ sub_id }}"{% endif %}}'
+       hx-vals='{{ dict(node_id=node.node_id, server_id=node.server_id, browse_path=node.browse_path, display_name=node.display_name, **({"sub_id": sub_id} if subscribed else {})) | tojson }}'
        hx-target="#vsw-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
        hx-swap="outerHTML"
        onchange="onVariableCheckChange(this)"{% endif %}

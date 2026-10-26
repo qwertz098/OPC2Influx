@@ -28,10 +28,13 @@ async def add_server(request: Request, state: RuntimeState = Depends(get_state))
         display_name=form.get("display_name", "New Server"),
         endpoint_url=form.get("endpoint_url", "opc.tcp://localhost:4840"),
         security_mode=form.get("security_mode", "None"),
+        security_policy=form.get("security_policy", "Basic256Sha256"),
         auth=ServerAuth(
             type=form.get("auth_type", "anonymous"),
             username=form.get("username", ""),
             password=form.get("password", ""),
+            certificate_path=form.get("certificate_path", "").strip(),
+            private_key_path=form.get("private_key_path", "").strip(),
         ),
         reconnect_interval_seconds=int(form.get("reconnect_interval", "10")),
         enabled=form.get("enabled", "true") == "true",
@@ -70,6 +73,9 @@ async def update_server(
             srv.display_name = form.get("display_name", srv.display_name)
             srv.endpoint_url = form.get("endpoint_url", srv.endpoint_url)
             srv.security_mode = form.get("security_mode", srv.security_mode)
+            srv.security_policy = form.get("security_policy", srv.security_policy)
+            srv.auth.certificate_path = form.get("certificate_path", srv.auth.certificate_path).strip()
+            srv.auth.private_key_path = form.get("private_key_path", srv.auth.private_key_path).strip()
             srv.reconnect_interval_seconds = int(
                 form.get("reconnect_interval", srv.reconnect_interval_seconds)
             )

@@ -13,7 +13,7 @@ import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from app.config import SmtpConfig
+from app.config import SmtpConfig, effective_smtp
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +43,12 @@ class AlertManager:
             logger.debug("Alert suppressed (cooldown): %s", key)
             return
 
-        if not self._cfg.enabled:
+        cfg = effective_smtp(self._cfg)
+        if not cfg.enabled:
             logger.debug("Email disabled — alert dropped: %s", subject)
             return
 
-        if not self._cfg.host or not self._cfg.to_addresses:
+        if not cfg.host or not cfg.to_addresses:
             logger.warning("SMTP not configured — alert dropped: %s", subject)
             return
 
@@ -74,7 +75,7 @@ class AlertManager:
             return str(exc)
 
     async def _send(self, subject: str, body: str) -> None:
-        cfg = self._cfg
+        cfg = effective_smtp(self._cfg)
         msg = MIMEMultipart("alternative")
         prefix = f"[OpcUA2InfluxDB · {self._site_name}]" if self._site_name else "[OpcUA2InfluxDB]"
         msg["Subject"] = f"{prefix} {subject}"

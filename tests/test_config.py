@@ -73,7 +73,11 @@ def test_env_var_substitution(tmp_path, monkeypatch):
         "      max_retries: 3\n"
     )
     config = load_config(cfg_dir)
-    assert config.influxdb.targets[0].token == "secret-token-abc"
+    # Placeholder stays in memory so saving never persists the secret; resolved at use time.
+    assert config.influxdb.targets[0].token == "${TEST_INFLUX_TOKEN}"
+    assert resolve_env(config.influxdb.targets[0].token) == "secret-token-abc"
+    save_influxdb(config.influxdb, cfg_dir)
+    assert "secret-token-abc" not in (cfg_dir / "influxdb.yaml").read_text()
 
 
 def test_env_var_missing_kept_as_placeholder(tmp_path):

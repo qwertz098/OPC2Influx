@@ -30,6 +30,10 @@ async def data_page(request: Request, state: RuntimeState = Depends(get_state)):
     })
 
 
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
 # Schema only changes when the SQLite writer adds a column — cache the
 # full-DB introspection briefly instead of re-opening every DB per request.
 _SIGNALS_TTL_S = 30.0
@@ -60,7 +64,7 @@ async def list_signals(state: RuntimeState = Depends(get_state)):
                 )
                 tables = [row[0] async for row in cursor]
                 for table in tables:
-                    cursor2 = await db.execute(f"PRAGMA table_info([{table}])")
+                    cursor2 = await db.execute(f"PRAGMA table_info({_quote_ident(table)})")
                     cols = [row[1] async for row in cursor2]
                     for col in cols:
                         if col == "time":
@@ -85,19 +89,32 @@ async def query_data(
     col: str = Query(...),
     from_ts: str = Query(default="", alias="from"),
     to_ts: str = Query(default="", alias="to"),
-    limit: int = Query(default=2000),
+    limit: int = Query(default=2000, ge=1, le=100_000),
+    state: RuntimeState = Depends(get_state),
 ):
     """
     Query time-series data from a SQLite target.
     Returns: {"series": [{"t": "...", "v": 1.23}, ...]}
     """
+    allowed = {t.file_path for t in state.config.sqlite.targets if t.enabled}
+    if db not in allowed:
+        return JSONResponse({"series": [], "error": "unknown db"}, status_code=400)
     db_path = Path(db)
     if not db_path.exists():
         return JSONResponse({"series": []})
     try:
         async with aiosqlite.connect(str(db_path)) as conn:
+            cursor = await conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            )
+            if await cursor.fetchone() is None:
+                return JSONResponse({"series": [], "error": "unknown table"}, status_code=400)
+            cursor = await conn.execute(f"PRAGMA table_info({_quote_ident(table)})")
+            if col not in {row[1] async for row in cursor}:
+                return JSONResponse({"series": [], "error": "unknown column"}, status_code=400)
+            qcol, qtable = _quote_ident(col), _quote_ident(table)
             params: list = []
-            where_clauses = [f"[{col}] IS NOT NULL"]
+            where_clauses = [f"{qcol} IS NOT NULL"]
             if from_ts:
                 where_clauses.append("time >= ?")
                 params.append(from_ts)
@@ -107,8 +124,8 @@ async def query_data(
             where = " AND ".join(where_clauses)
             params.append(limit)
             sql = (
-                f"SELECT time, CAST([{col}] AS REAL) "
-                f"FROM [{table}] "
+                f"SELECT time, CAST({qcol} AS REAL) "
+                f"FROM {qtable} "
                 f"WHERE {where} "
                 f"ORDER BY time "
                 f"LIMIT ?"
@@ -119,4 +136,4 @@ async def query_data(
         return JSONResponse({"series": series})
     except Exception as exc:
         logger.warning("Query error db=%s table=%s col=%s: %s", db, table, col, exc)
-        return JSONResponse({"series": [], "error": str(exc)})
+        return JSONResponse({"series": [], "error": "query failed"})

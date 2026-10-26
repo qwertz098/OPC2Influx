@@ -49,13 +49,13 @@ async def _scan_children(mgr, server_id: str, node_id: str | None) -> tuple[list
     group). _browse_paged enforces a hard page cap and reports truncation
     instead of ever blocking on/trusting server-side pagination completeness.
 
-    Returns (children, truncated). truncated=True means this folder has more
-    children than the cap could retrieve — callers MUST NOT treat the result
-    as a complete/authoritative child list in that case.
+    Returns (children, truncated). truncated=True means the list is incomplete
+    (page cap reached, browse error or failed attribute reads) — callers MUST
+    NOT treat the result as a complete/authoritative child list in that case.
     """
     client = await _resolve_browse_client(mgr, server_id)
     if client is None:
-        return [], False
+        return [], True
     if node_id is None:
         parent = client.nodes.objects
     else:
@@ -67,7 +67,7 @@ async def _scan_children(mgr, server_id: str, node_id: str | None) -> tuple[list
         discard = getattr(mgr, "discard_browse_client", None)
         if discard:
             discard(server_id)
-        return [], False
+        return [], True
 
     # Node.read_attributes()/read_data_type()/get_children() all log at DEBUG
     # inside asyncua, so at INFO level a slow scan is invisible progress-wise —
@@ -93,6 +93,7 @@ async def _scan_children(mgr, server_id: str, node_id: str | None) -> tuple[list
             node_class = _NODE_CLASS.get(node_class_val, "Unknown")
         except Exception as exc:
             logger.debug("FolderScanner: attribute read failed for %s: %s", n.nodeid, exc)
+            truncated = True  # result is incomplete — callers must not treat it as authoritative
             continue
 
         data_type: str | None = None
@@ -254,7 +255,7 @@ class FolderScanner:
         logger.info(
             "FolderScanner: browsed %s (%d nodes%s) in %.1fs",
             watcher.folder_browse_path, len(current_nodes),
-            ", TRUNCATED — incomplete, page cap reached" if truncated else "",
+            ", INCOMPLETE — page cap reached or read errors" if truncated else "",
             time.monotonic() - scan_started,
         )
 
@@ -266,7 +267,10 @@ class FolderScanner:
             for s in state.config.subscriptions.subscriptions
             if s.source_folder_id == watcher.id
         }
-        existing_ids = {s.node_id for s in state.config.subscriptions.subscriptions}
+        existing_ids = {
+            s.node_id for s in state.config.subscriptions.subscriptions
+            if s.server_id == watcher.server_id
+        }
 
         changed = False
 

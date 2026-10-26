@@ -85,7 +85,7 @@ class SQLiteWriter:
         state = self._state
         if not state.polling_engine:
             return
-        last_values = state.polling_engine._last_values
+        last_values = state.polling_engine.live_values()
         subs = state.config.subscriptions.subscriptions
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 

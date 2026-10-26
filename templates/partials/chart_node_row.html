@@ -7,7 +7,7 @@
     {% if node.has_children %}
     <button class="node-toggle"
             hx-get="/chart/nodes/{{ node.server_id }}/{{ node.node_id | urlencode }}"
-            hx-vals='{"parent_path": "{{ node.browse_path }}"}'
+            hx-vals='{{ {"parent_path": node.browse_path} | tojson }}'
             hx-target="#chart-ch-{{ node.server_id | slugify }}-{{ node.node_id | slugify }}"
             hx-swap="innerHTML"
             hx-trigger="click once"

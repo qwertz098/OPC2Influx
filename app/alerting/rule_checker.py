@@ -68,7 +68,7 @@ class AlarmRuleChecker:
                 if not state.polling_engine:
                     continue
 
-                last_values = state.polling_engine._last_values
+                last_values = state.polling_engine.live_values()
 
                 for rule in state.config.alarm_rules.rules:
                     if not rule.enabled:

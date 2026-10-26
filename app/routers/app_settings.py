@@ -17,7 +17,7 @@ templates = Jinja2Templates(directory="templates")
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, state: RuntimeState = Depends(get_state)):
     import os
-    from app.main import smtp_env_overrides
+    from app.config import smtp_env_overrides
     return templates.TemplateResponse(request, "config/settings.html", {
         "request": request,
         "cfg": state.config.app_settings,
@@ -64,14 +64,12 @@ async def save_smtp(request: Request, state: RuntimeState = Depends(get_state)):
             port=int(form.get("smtp_port", "587")),
             tls=form.get("smtp_tls", "false") == "true",
             username=form.get("smtp_username", ""),
-            password=form.get("smtp_password", ""),
+            password=form.get("smtp_password", "") or state.config.alerts.smtp.password,
             from_address=form.get("smtp_from", ""),
             to_addresses=to_list,
         ),
     )
     save_alerts(state.config.alerts, state.config_dir)
-    from app.main import apply_smtp_env
-    apply_smtp_env(state.config.alerts.smtp)
     if state.alert_manager:
         state.alert_manager.update_config(state.config.alerts.smtp)
     return HTMLResponse('<span class="badge badge-ok save-confirm">✓ Saved</span>')

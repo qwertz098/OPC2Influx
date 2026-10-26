@@ -48,46 +48,6 @@ _APP_VERSION = str(int(time.time()))
 _SITE_NAME_ENV = os.environ.get("SITE_NAME", "").strip()
 _SITE_NAME = _SITE_NAME_ENV  # resolved in lifespan after config is loaded
 
-# SMTP env vars — each overrides the corresponding YAML field when set.
-_SMTP_ENV_KEYS = {
-    "host":         "SMTP_HOST",
-    "port":         "SMTP_PORT",
-    "tls":          "SMTP_TLS",
-    "username":     "SMTP_USERNAME",
-    "password":     "SMTP_PASSWORD",
-    "from_address": "SMTP_FROM",
-    "to_addresses": "SMTP_TO",
-}
-
-
-def smtp_env_overrides() -> dict:
-    """Return a dict of SmtpConfig field → raw env value for every set SMTP env var."""
-    result = {}
-    for field, var in _SMTP_ENV_KEYS.items():
-        val = os.environ.get(var, "").strip()
-        if val:
-            result[field] = val
-    return result
-
-
-def apply_smtp_env(smtp) -> None:
-    """Overlay SMTP env vars onto a SmtpConfig object in-place."""
-    overrides = smtp_env_overrides()
-    if "host" in overrides:
-        smtp.host = overrides["host"]
-    if "port" in overrides:
-        smtp.port = int(overrides["port"])
-    if "tls" in overrides:
-        smtp.tls = overrides["tls"].lower() in ("true", "1", "yes")
-    if "username" in overrides:
-        smtp.username = overrides["username"]
-    if "password" in overrides:
-        smtp.password = overrides["password"]
-    if "from_address" in overrides:
-        smtp.from_address = overrides["from_address"]
-    if "to_addresses" in overrides:
-        smtp.to_addresses = [a.strip() for a in overrides["to_addresses"].split(",") if a.strip()]
-
 _all_template_envs: list = []  # collected by _make_jinja_env
 
 
@@ -154,7 +114,6 @@ async def lifespan(app: FastAPI):
     state.influx_pool = InfluxWriterPool(state)
     _resolved = effective_site_name(config.app_settings.site_name)
     update_site_name(_resolved)
-    apply_smtp_env(config.alerts.smtp)
     state.alert_manager = AlertManager(config.alerts.smtp, on_log=state.add_alarm, site_name=_resolved)
     state.watchdog = WatchdogService(state)
     state.sqlite_writer_pool = SQLiteWriterPool(state)

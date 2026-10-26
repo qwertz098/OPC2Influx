@@ -103,6 +103,17 @@ class PollingEngine:
         self._server_by_id: dict[str, ServerConfig] = {}
         self._node_id_by_path: dict[tuple[str, str], str] = {}
 
+
+    def live_values(self) -> dict[str, Any]:
+        """Last read value per enabled subscription whose server is currently connected."""
+        mgr = self._state.opcua_manager
+        if mgr is None:
+            return {}
+        return {
+            sub.id: self._last_values[sub.id]
+            for sub in self._state.config.subscriptions.subscriptions
+            if sub.enabled and sub.id in self._last_values and mgr.is_connected(sub.server_id)
+        }
     async def reconcile(self) -> None:
         """Diff current group tasks against current config and update."""
         self._server_by_id = {s.id: s for s in self._state.config.servers.servers}
