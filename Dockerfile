@@ -1,14 +1,24 @@
-FROM python:3.12-slim
+# --- Build stage: collect every requirement as a wheel. The compiler is only
+# used if some package has no binary wheel for the target platform, and it
+# never reaches the final image.
+FROM python:3.12-slim AS builder
 
-WORKDIR /app
-
-# Build dependencies for cryptography (used by asyncua security modes)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+# --- Runtime stage ---
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+# Bind-mount the wheels instead of copying them, so they add no image layer
+RUN --mount=type=bind,from=builder,source=/wheels,target=/wheels \
+    pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt
 
 COPY app/ ./app/
 COPY templates/ ./templates/
