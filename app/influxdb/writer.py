@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -18,7 +19,6 @@ _CONFLICT_RE = re.compile(
 )
 
 from influxdb_client.client.influxdb_client_async import InfluxDBClientAsync
-from influxdb_client import Point
 from influxdb_client.rest import ApiException
 
 from app.config import InfluxTargetConfig, resolve_env, resolve_env_strict, UnresolvedEnvVarError
@@ -34,6 +34,62 @@ class WritePoint:
     field: str
     value: Any
     timestamp: datetime
+
+
+# Line-protocol escaping, identical to influxdb_client.Point
+_ESCAPE_MEASUREMENT = str.maketrans({",": r"\,", " ": r"\ ", "\n": r"\n", "\t": r"\t", "\r": r"\r"})
+_ESCAPE_KEY = str.maketrans({",": r"\,", "=": r"\=", " ": r"\ ", "\n": r"\n", "\t": r"\t", "\r": r"\r"})
+_ESCAPE_STRING = str.maketrans({'"': r'\"', "\\": r"\\"})
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_PREFIX_CACHE_MAX = 50_000
+
+
+def _field_suffix(value: Any) -> str:
+    if isinstance(value, bool):
+        return "_bool"
+    if isinstance(value, int):
+        return "_integer"
+    if isinstance(value, float):
+        return "_float"
+    return "_string"
+
+
+def _escape_tag_value(value: str) -> str:
+    ret = str(value).translate(_ESCAPE_KEY)
+    return ret + " " if ret.endswith("\\") else ret
+
+
+def _line_prefix(measurement: str, tags: tuple[tuple[str, str], ...], field: str) -> str:
+    """'measurement,tag=v field=' — the part that is constant per series."""
+    parts = [measurement.translate(_ESCAPE_MEASUREMENT)]
+    for key, value in tags:
+        k, v = str(key).translate(_ESCAPE_KEY), _escape_tag_value(value)
+        if k and v:
+            parts.append(f"{k}={v}")
+    return ",".join(parts) + " " + str(field).translate(_ESCAPE_KEY) + "="
+
+
+def _format_value(value: Any) -> str | None:
+    """Field value as line protocol (None = not representable, point is dropped)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return f"{value}i"
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        s = str(value)
+        return s[:-2] if s.endswith(".0") else s
+    if isinstance(value, str):
+        return '"' + value.translate(_ESCAPE_STRING) + '"'
+    return None
+
+
+def _timestamp_ns(ts: datetime) -> int:
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    delta = ts - _EPOCH
+    return (delta.days * 86_400 + delta.seconds) * 1_000_000_000 + delta.microseconds * 1_000
 
 
 class InfluxTargetWriter:
@@ -53,6 +109,8 @@ class InfluxTargetWriter:
         self._snapshot = (cfg.model_dump(), resolve_env(cfg.token))
         # Rate-limit repeated schema-conflict log messages (log at most once per 60 s)
         self._last_schema_warn: float = 0.0
+        # (measurement, tags, field) → escaped line prefix; series repeat every poll
+        self._prefix_cache: dict[tuple, str] = {}
 
     def config_changed(self, cfg: InfluxTargetConfig) -> bool:
         return self._snapshot != (cfg.model_dump(), resolve_env(cfg.token))
@@ -98,8 +156,13 @@ class InfluxTargetWriter:
                 batch: list[WritePoint] = []
                 deadline = asyncio.get_event_loop().time() + flush_interval
 
-                # Collect up to batch_size items or until flush_interval expires
+                # Collect up to batch_size items or until flush_interval expires.
+                # Drain what is already queued without wait_for(), which would
+                # create a timer task per point.
                 while len(batch) < batch_size:
+                    if not self._queue.empty():
+                        batch.append(self._queue.get_nowait())
+                        continue
                     remaining = deadline - asyncio.get_event_loop().time()
                     if remaining <= 0:
                         break
@@ -130,40 +193,38 @@ class InfluxTargetWriter:
                 logger.error("InfluxDB flush loop error for %s: %s", self.cfg.id, exc)
                 await asyncio.sleep(1)
 
+    def _to_line(self, wp: WritePoint) -> str | None:
+        """Serialize one point to line protocol, as influxdb_client.Point would.
+
+        Native types are passed through unchanged:
+          OPC UA Float/Double → Python float → InfluxDB float
+          OPC UA Int*         → Python int   → InfluxDB integer
+          OPC UA Boolean      → Python bool  → InfluxDB boolean
+                                (or int 0/1 if bool_as_int is set on the server)
+        With type_suffix the Python type is appended to the field name
+        (e.g. value → value_float) to prevent InfluxDB schema conflicts.
+        """
+        value = _format_value(wp.value)
+        if value is None:
+            return None
+        field = wp.field + _field_suffix(wp.value) if self.cfg.type_suffix else wp.field
+        key = (wp.measurement, tuple(sorted(wp.tags.items())), field)
+        prefix = self._prefix_cache.get(key)
+        if prefix is None:
+            if len(self._prefix_cache) >= _PREFIX_CACHE_MAX:
+                self._prefix_cache.clear()
+            prefix = self._prefix_cache[key] = _line_prefix(*key)
+        return f"{prefix}{value} {_timestamp_ns(wp.timestamp)}"
+
     async def _write_batch(self, batch: list[WritePoint]) -> None:
         if self._client is None:
             return
         self.status.writes_attempted += len(batch)
         try:
             write_api = self._client.write_api()
-            points = []
-            for wp in batch:
-                p = Point(wp.measurement)
-                for k, v in wp.tags.items():
-                    p = p.tag(k, v)
-                # Native types are passed through unchanged:
-                #   OPC UA Float/Double → Python float  → InfluxDB float
-                #   OPC UA Int*         → Python int    → InfluxDB integer
-                #   OPC UA Boolean      → Python bool   → InfluxDB boolean
-                #                         (or int 0/1 if bool_as_int is set on the server)
-                # When type_suffix is enabled, append the Python type to the field name
-                # (e.g. value → value_float) to prevent InfluxDB schema conflicts.
-                if self.cfg.type_suffix:
-                    if isinstance(wp.value, bool):
-                        field_name = wp.field + '_bool'
-                    elif isinstance(wp.value, int):
-                        field_name = wp.field + '_integer'
-                    elif isinstance(wp.value, float):
-                        field_name = wp.field + '_float'
-                    else:
-                        field_name = wp.field + '_string'
-                else:
-                    field_name = wp.field
-                p = p.field(field_name, wp.value)
-                p = p.time(wp.timestamp)
-                points.append(p)
-
-            await write_api.write(bucket=self.cfg.bucket, org=self.cfg.org, record=points)
+            points = [line for line in map(self._to_line, batch) if line is not None]
+            if points:
+                await write_api.write(bucket=self.cfg.bucket, org=self.cfg.org, record=points)
             self.status.connected = True
             self.status.consecutive_failures = 0
             if self.status.started_at is None:
@@ -297,21 +358,22 @@ class InfluxWriterPool:
         point = WritePoint(measurement=measurement, tags=tags, field=field,
                            value=value, timestamp=timestamp)
 
-        always_writers = sorted(
-            [w for tid, w in self._writers.items() if w.cfg.mode == "always"],
-            key=lambda w: w.cfg.priority,
-        )
-        failover_writers = sorted(
-            [w for tid, w in self._writers.items() if w.cfg.mode == "failover"],
-            key=lambda w: w.cfg.priority,
-        )
+        always_writers: list[InfluxTargetWriter] = []
+        failover_writers: list[InfluxTargetWriter] = []
+        for w in self._writers.values():
+            (always_writers if w.cfg.mode == "always" else failover_writers).append(w)
+        if len(failover_writers) > 1:
+            failover_writers.sort(key=lambda w: w.cfg.priority)
 
         if always_writers:
-            # Fan-out to all always targets
-            await asyncio.gather(
-                *[w.enqueue(point) for w in always_writers],
-                return_exceptions=True,
-            )
+            # Fan-out to all always targets. Writer.enqueue only does a
+            # put_nowait, so awaiting each in turn avoids gather()'s per-point
+            # task creation.
+            for w in always_writers:
+                try:
+                    await w.enqueue(point)
+                except Exception as exc:
+                    logger.debug("enqueue to %s failed: %s", w.cfg.id, exc)
             # Check if all always targets are down → activate failover
             all_always_down = all(not w.status.connected for w in always_writers)
             if all_always_down and failover_writers:

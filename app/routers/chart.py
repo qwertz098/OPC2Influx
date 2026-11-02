@@ -141,14 +141,16 @@ async def read_nodes(request: Request, state: RuntimeState = Depends(get_state))
 
     # Build (server_id, node_id) → last_value map from the polling-engine cache
     cached: dict[tuple[str, str], float] = {}
+    wanted = {(item.get("server_id", ""), item.get("node_id", "")) for item in body}
     engine = state.polling_engine
     if engine is not None:
         lv = engine.live_values()  # {sub.id: raw_value}
         for sub in state.config.subscriptions.subscriptions:
-            if sub.id in lv:
+            key = (sub.server_id, sub.node_id)
+            if key in wanted and key not in cached and sub.id in lv:
                 raw = lv[sub.id]
                 try:
-                    cached[(sub.server_id, sub.node_id)] = float(int(raw) if isinstance(raw, bool) else raw)
+                    cached[key] = float(int(raw) if isinstance(raw, bool) else raw)
                 except (TypeError, ValueError):
                     pass
 

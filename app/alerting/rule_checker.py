@@ -67,6 +67,8 @@ class AlarmRuleChecker:
                 await asyncio.sleep(self.CHECK_INTERVAL)
                 if not state.polling_engine:
                     continue
+                if not any(r.enabled for r in state.config.alarm_rules.rules):
+                    continue
 
                 last_values = state.polling_engine.live_values()
 

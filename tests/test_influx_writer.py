@@ -103,3 +103,25 @@ async def test_queue_full_does_not_raise():
     # This should not raise
     point = WritePoint("m", {}, "v", 2.0, datetime.now(timezone.utc))
     await writer.enqueue(point)  # Queue is full — should log and return
+
+
+@pytest.mark.parametrize("value", [True, 42, -7, 1.5, 3.0, float("nan"), 'say "hi" \\ there'])
+@pytest.mark.parametrize("type_suffix", [False, True])
+def test_line_protocol_matches_influx_client_point(value, type_suffix):
+    from types import SimpleNamespace
+    from influxdb_client import Point
+    from app.influxdb.writer import _field_suffix
+
+    ts = datetime(2026, 1, 2, 3, 4, 5, 678901, tzinfo=timezone.utc)
+    tags = {"site": "Plant A", "line,no": "1=2", "empty": ""}
+    writer = InfluxTargetWriter.__new__(InfluxTargetWriter)
+    writer.cfg = SimpleNamespace(type_suffix=type_suffix)
+    writer._prefix_cache = {}
+
+    field = "value" + (_field_suffix(value) if type_suffix else "")
+    point = Point("Line 1,Drive").field(field, value).time(ts)
+    for k, v in tags.items():
+        point = point.tag(k, v)
+
+    got = writer._to_line(WritePoint("Line 1,Drive", tags, "value", value, ts))
+    assert (got or "") == point.to_line_protocol()
