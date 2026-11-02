@@ -14,6 +14,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# SQLite's default SQLITE_MAX_COLUMN: a table holds at most 2000 columns,
+# including "time". Signals beyond that are skipped with a warning.
+MAX_COLUMNS = 2000
+
 
 @dataclass
 class SQLiteTargetStatus:
@@ -21,6 +25,8 @@ class SQLiteTargetStatus:
     last_write: datetime | None = None
     last_error: str | None = None
     started_at: datetime | None = None
+    # Signals not recorded because their server's table is full
+    skipped_signals: int = 0
 
 
 class SQLiteWriter:
@@ -97,23 +103,22 @@ class SQLiteWriter:
             by_server.setdefault(sub.server_id, []).append(sub)
 
         db = await self._get_db()
+        skipped = 0
         for server_id, server_subs in by_server.items():
             srv = next((s for s in state.config.servers.servers if s.id == server_id), None)
             table = (srv.display_name if srv else server_id).replace(" ", "_").replace("-", "_")
             # Sanitize table name
             table = "".join(c if c.isalnum() or c == "_" else "_" for c in table)
 
-            # Build column names and values
-            cols = []
-            vals = []
+            # Column → value; a later subscription with the same column name wins
+            values: dict[str, str | None] = {}
             for sub in server_subs:
                 col = (sub.influxdb.measurement.replace(".", "_") + "_" + sub.influxdb.field_name)
                 col = "".join(c if c.isalnum() or c == "_" else "_" for c in col)
-                cols.append(col)
                 val = last_values.get(sub.id)
-                vals.append(str(val) if val is not None else None)
+                values[col] = str(val) if val is not None else None
 
-            if not cols:
+            if not values:
                 continue
 
             # Ensure table and columns exist; schema is introspected once per
@@ -128,11 +133,17 @@ class SQLiteWriter:
                 )
                 existing = {row[1] async for row in await db.execute(f"PRAGMA table_info([{table}])")}
                 self._known_columns[table] = existing
-            for col in cols:
-                if col not in existing:
-                    await db.execute(f"ALTER TABLE [{table}] ADD COLUMN [{col}] TEXT")
-                    existing.add(col)
+            for col in list(values):
+                if col in existing:
+                    continue
+                if len(existing) >= MAX_COLUMNS:
+                    skipped += 1
+                    del values[col]
+                    continue
+                await db.execute(f"ALTER TABLE [{table}] ADD COLUMN [{col}] TEXT")
+                existing.add(col)
 
+            cols, vals = list(values), list(values.values())
             placeholders = ", ".join(["?"] * (len(cols) + 1))
             col_names = ", ".join(["time"] + [f"[{c}]" for c in cols])
             await db.execute(
@@ -146,6 +157,19 @@ class SQLiteWriter:
         self._status.rows_written += len(by_server)
         self._status.last_write = datetime.now(timezone.utc)
         self._status.last_error = None
+        self._report_skipped(skipped)
+
+    def _report_skipped(self, skipped: int) -> None:
+        """Warn (log + event) whenever the number of signals that do not fit changes."""
+        if skipped == self._status.skipped_signals:
+            return
+        self._status.skipped_signals = skipped
+        if not skipped:
+            return
+        msg = (f"SQLite '{self._cfg.display_name}': {skipped} signal(s) not recorded — "
+               f"at most {MAX_COLUMNS - 1} signals per server fit into one table")
+        logger.warning(msg)
+        self._state.add_alarm("warning", f"sqlite:{self._cfg.id}", msg)
 
 
 class SQLiteWriterPool:

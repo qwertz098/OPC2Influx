@@ -109,11 +109,15 @@ class PollingEngine:
         mgr = self._state.opcua_manager
         if mgr is None:
             return {}
+        # Check each server once instead of once per subscription
+        connected = {s.id for s in self._state.config.servers.servers if mgr.is_connected(s.id)}
+        last = self._last_values
         return {
-            sub.id: self._last_values[sub.id]
+            sub.id: last[sub.id]
             for sub in self._state.config.subscriptions.subscriptions
-            if sub.enabled and sub.id in self._last_values and mgr.is_connected(sub.server_id)
+            if sub.enabled and sub.server_id in connected and sub.id in last
         }
+
     async def reconcile(self) -> None:
         """Diff current group tasks against current config and update."""
         self._server_by_id = {s.id: s for s in self._state.config.servers.servers}
@@ -153,12 +157,15 @@ class PollingEngine:
         for sid in set(self._sub_state) - active_ids:
             del self._sub_state[sid]
 
-    async def _resolve_central_tags(self, sub: SubscriptionConfig, mgr: Any) -> dict[str, str]:
+    async def _resolve_central_tags(
+        self, sub: SubscriptionConfig, mgr: Any, all_tags: dict | None = None
+    ) -> dict[str, str]:
         """Resolve active central tags for a subscription; cache dynamic values on first poll."""
         result: dict[str, str] = {}
         if not sub.active_tags:
             return result
-        all_tags = {t.id: t for t in self._state.config.tags.tags}
+        if all_tags is None:
+            all_tags = {t.id: t for t in self._state.config.tags.tags}
         sub_cache = self._tag_cache.setdefault(sub.id, {})
         for activation in sub.active_tags:
             if not activation.active:
@@ -204,9 +211,11 @@ class PollingEngine:
                 # server's OperationLimits (e.g. WAGO MaxNodesPerRead=100).
                 values = await mgr.read_node_values(server_id, node_ids)
 
+                # Central tag lookup built once per cycle, not once per value
+                all_tags = {t.id: t for t in self._state.config.tags.tags}
                 for sub, value in zip(subs, values):
                     try:
-                        await self._process_value(sub, value, mgr)
+                        await self._process_value(sub, value, mgr, all_tags)
                     except Exception as exc:
                         logger.debug("Poll error sub=%s: %s", sub.id, exc)
 
@@ -215,7 +224,9 @@ class PollingEngine:
             except Exception as exc:
                 logger.debug("Poll error group=%s/%sms: %s", server_id, interval_ms, exc)
 
-    async def _process_value(self, sub: SubscriptionConfig, value: Any, mgr: Any) -> None:
+    async def _process_value(
+        self, sub: SubscriptionConfig, value: Any, mgr: Any, all_tags: dict | None = None
+    ) -> None:
         """Handle one freshly read value for one subscription.
 
         Logic moved verbatim from the former per-subscription poll loop:
@@ -290,7 +301,7 @@ class PollingEngine:
                 for stat_tag in srv.static_tags:
                     tags.setdefault(stat_tag.key, stat_tag.value)
             # Central tags active for this subscription
-            central = await self._resolve_central_tags(sub, mgr)
+            central = await self._resolve_central_tags(sub, mgr, all_tags)
             tags.update(central)
 
             pool = self._state.influx_pool

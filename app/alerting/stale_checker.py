@@ -43,16 +43,14 @@ class StaleValueChecker:
         mgr = state.opcua_manager
         if engine is None:
             return
+        rules = [r for r in state.config.stale_watchdog.rules if r.enabled]
+        if not rules:
+            return
+        # One index per check instead of a linear search per rule
+        subs_by_id = {s.id: s for s in state.config.subscriptions.subscriptions}
 
-        for rule in state.config.stale_watchdog.rules:
-            if not rule.enabled:
-                continue
-
-            sub = next(
-                (s for s in state.config.subscriptions.subscriptions
-                 if s.id == rule.subscription_id),
-                None,
-            )
+        for rule in rules:
+            sub = subs_by_id.get(rule.subscription_id)
             if sub is None or not sub.enabled:
                 continue
 

@@ -241,9 +241,10 @@ class OpcUaClientManager:
         self._browse_clients.pop(server_id, None)
 
     def is_connected(self, server_id: str) -> bool:
-        return server_id in self._clients and (
-            self._state.server_status.get(server_id, ServerStatus()).connected
-        )
+        if server_id not in self._clients:
+            return False
+        status = self._state.server_status.get(server_id)
+        return status is not None and status.connected
 
     async def browse(self, server_id: str, node_id: str | None = None) -> list[Node]:
         client = self._require_client(server_id)
