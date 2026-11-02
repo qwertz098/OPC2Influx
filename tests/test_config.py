@@ -127,3 +127,16 @@ def test_resolve_env_resolves_at_runtime(monkeypatch):
     assert resolve_env("${MY_RT_TOKEN}") == "runtime-value"
     assert resolve_env("plain-token") == "plain-token"
     assert resolve_env("${MISSING_VAR_XYZ}") == "${MISSING_VAR_XYZ}"
+
+
+def test_sqlite_relative_paths_resolve_into_data_dir(monkeypatch, tmp_path):
+    from app.config import SQLiteTargetConfig
+
+    monkeypatch.setenv("APP_DATA_DIR", "/data")
+    assert SQLiteTargetConfig().path == str(Path("/data/opcua_log.db"))
+    assert SQLiteTargetConfig(file_path="logs/x.db").path == str(Path("/data/logs/x.db"))
+    absolute = str(tmp_path / "x.db")
+    assert SQLiteTargetConfig(file_path=absolute).path == absolute
+
+    monkeypatch.delenv("APP_DATA_DIR")
+    assert SQLiteTargetConfig().path == str(Path("data/opcua_log.db"))  # local runs unchanged

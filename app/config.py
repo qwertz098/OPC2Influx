@@ -294,12 +294,32 @@ class TagsConfig(BaseModel):
 # SQLite targets config
 # ---------------------------------------------------------------------------
 
+def resolve_data_path(file_path: str) -> str:
+    """Resolve a configured SQLite path against APP_DATA_DIR (default ``data``).
+
+    Absolute paths are kept. Relative ones are placed in the data directory so
+    that in Docker they land on the ``/data`` volume instead of the container's
+    own filesystem; a leading ``data/`` (the historic default) is not repeated.
+    """
+    p = Path(file_path)
+    if p.is_absolute():
+        return str(p)
+    if p.parts and p.parts[0] == "data":
+        p = Path(*p.parts[1:])
+    return str(Path(os.environ.get("APP_DATA_DIR", "data")) / p)
+
+
 class SQLiteTargetConfig(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     display_name: str = "SQLite Log"
     file_path: str = "data/opcua_log.db"
     write_interval_seconds: int = 60
     enabled: bool = True
+
+    @property
+    def path(self) -> str:
+        """Filesystem location of ``file_path`` (see resolve_data_path)."""
+        return resolve_data_path(self.file_path)
 
 
 class SQLiteConfig(BaseModel):

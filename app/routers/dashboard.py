@@ -49,7 +49,7 @@ def _sqlite_bytes_per_day(state: RuntimeState) -> dict[str, int | None]:
 def _sqlite_file_sizes(state: RuntimeState) -> dict[str, int | None]:
     sizes: dict[str, int | None] = {}
     for t in state.config.sqlite.targets:
-        p = Path(t.file_path)
+        p = Path(t.path)
         sizes[t.id] = p.stat().st_size if p.exists() else None
     return sizes
 
@@ -71,7 +71,7 @@ async def _sqlite_total_rows(state: RuntimeState) -> dict[str, int | None]:
         if cached is not None and now - cached[0] < _ROW_COUNT_TTL_S:
             result[t.id] = cached[1]
         else:
-            count = await _count_total_rows(t.file_path)
+            count = await _count_total_rows(t.path)
             _row_count_cache[t.file_path] = (now, count)
             result[t.id] = count
     return result

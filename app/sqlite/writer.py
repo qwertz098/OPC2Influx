@@ -39,7 +39,7 @@ class SQLiteWriter:
         return self._status
 
     async def start(self) -> None:
-        Path(self._cfg.file_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self._cfg.path).parent.mkdir(parents=True, exist_ok=True)
         self._task = asyncio.create_task(self._write_loop(), name=f"sqlite-{self._cfg.id}")
 
     async def stop(self) -> None:
@@ -54,7 +54,7 @@ class SQLiteWriter:
     async def _get_db(self) -> aiosqlite.Connection:
         """Persistent connection, opened lazily; WAL so readers never block writes."""
         if self._db is None:
-            self._db = await aiosqlite.connect(self._cfg.file_path)
+            self._db = await aiosqlite.connect(self._cfg.path)
             await self._db.execute("PRAGMA journal_mode=WAL")
             await self._db.execute("PRAGMA synchronous=NORMAL")
             self._known_columns = {}

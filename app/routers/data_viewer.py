@@ -54,7 +54,7 @@ async def list_signals(state: RuntimeState = Depends(get_state)):
     for target in state.config.sqlite.targets:
         if not target.enabled:
             continue
-        db_path = Path(target.file_path)
+        db_path = Path(target.path)
         if not db_path.exists():
             continue
         try:
@@ -96,10 +96,10 @@ async def query_data(
     Query time-series data from a SQLite target.
     Returns: {"series": [{"t": "...", "v": 1.23}, ...]}
     """
-    allowed = {t.file_path for t in state.config.sqlite.targets if t.enabled}
+    allowed = {t.file_path: t.path for t in state.config.sqlite.targets if t.enabled}
     if db not in allowed:
         return JSONResponse({"series": [], "error": "unknown db"}, status_code=400)
-    db_path = Path(db)
+    db_path = Path(allowed[db])
     if not db_path.exists():
         return JSONResponse({"series": []})
     try:
