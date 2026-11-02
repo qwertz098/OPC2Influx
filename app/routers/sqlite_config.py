@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import csv
-import io
-import sqlite3
-import zipfile
 from pathlib import Path
 
 import aiosqlite
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from app.config import SQLiteTargetConfig, SQLiteConfig, save_sqlite
 from app.dependencies import get_state
+from app.sqlite import export as sqlite_export
 from app.state import RuntimeState
 
 router = APIRouter(prefix="/config/sqlite")
@@ -101,76 +99,142 @@ async def delete_target(target_id: str, state: RuntimeState = Depends(get_state)
     return RedirectResponse("/config/sqlite", status_code=303)
 
 
-@router.get("/{target_id}/export")
-async def export_csv(target_id: str, state: RuntimeState = Depends(get_state)):
-    """Export a SQLite target as CSV (single file) or ZIP of CSVs (multiple tables)."""
-    t = next((t for t in state.config.sqlite.targets if t.id == target_id), None)
-    if t is None:
-        return HTMLResponse("Not found", status_code=404)
-    path = Path(t.file_path)
-    if not path.exists():
-        return HTMLResponse("Database file not found", status_code=404)
-
-    # Build column → friendly header map from current subscriptions
-    col_to_header: dict[str, str] = {}
+def _signal_labels(state: RuntimeState) -> dict[str, str]:
+    """Map SQLite column name → friendly label from current subscriptions."""
+    labels: dict[str, str] = {}
     for sub in state.config.subscriptions.subscriptions:
         col = sub.influxdb.measurement.replace(".", "_") + "_" + sub.influxdb.field_name
+        col = "".join(c if c.isalnum() or c == "_" else "_" for c in col)
         label = sub.influxdb.measurement
         if sub.influxdb.field_name != "value":
             label += f" ({sub.influxdb.field_name})"
-        col_to_header[col] = label
+        labels[col] = label
+    return labels
 
-    def _table_to_csv(db: sqlite3.Connection, table: str) -> str:
-        cur = db.execute(f"PRAGMA table_info([{table}])")
-        columns = [row[1] for row in cur.fetchall()]
-        data_cols = [c for c in columns if c != "time"]
-        headers = ["time"] + [col_to_header.get(c, c) for c in data_cols]
-        col_clause = ", ".join(f"[{c}]" for c in columns)
-        rows = db.execute(f"SELECT {col_clause} FROM [{table}] ORDER BY time").fetchall()
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow(headers)
-        for row in rows:
-            # Replace None with empty string
-            writer.writerow(["" if v is None else v for v in row])
-        return buf.getvalue()
 
-    def _generate():
-        db = sqlite3.connect(str(path))
+def _export_target(state: RuntimeState, target_id: str) -> SQLiteTargetConfig | None:
+    t = next((t for t in state.config.sqlite.targets if t.id == target_id), None)
+    if t is None or not Path(t.file_path).exists():
+        return None
+    return t
+
+
+def _read_schema(path: str) -> dict[str, list[str]]:
+    db = sqlite_export.connect(path)
+    try:
+        return sqlite_export.read_schema(db)
+    finally:
+        db.close()
+
+
+async def _spec_from_form(request: Request, path: str) -> sqlite_export.ExportSpec:
+    form = await request.form()
+    schema = await run_in_threadpool(_read_schema, path)
+    return sqlite_export.parse_spec(
+        schema,
+        signals=form.getlist("signal"),
+        start=form.get("from"),
+        end=form.get("to"),
+        interval=form.get("interval", ""),
+        method=form.get("method", "avg"),
+        fmt=form.get("format", "standard"),
+        zip_=form.get("zip") == "1",
+    )
+
+
+def _estimate(path: str, spec: sqlite_export.ExportSpec) -> dict:
+    db = sqlite_export.connect(path)
+    try:
+        return sqlite_export.estimate(db, spec)
+    finally:
+        db.close()
+
+
+@router.get("/{target_id}/export/dialog", response_class=HTMLResponse)
+async def export_dialog(target_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    t = _export_target(state, target_id)
+    if t is None:
+        return HTMLResponse("Database file not found", status_code=404)
+
+    def _load():
+        db = sqlite_export.connect(t.file_path)
         try:
-            tables = [r[0] for r in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            ).fetchall()]
-            if len(tables) == 1:
-                yield _table_to_csv(db, tables[0]).encode("utf-8")
-            else:
-                zip_buf = io.BytesIO()
-                with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for table in tables:
-                        zf.writestr(f"{table}.csv", _table_to_csv(db, table))
-                yield zip_buf.getvalue()
+            schema = sqlite_export.read_schema(db)
+            return schema, sqlite_export.time_bounds(db, schema)
         finally:
             db.close()
 
-    # Peek at table count to decide content type
-    db_peek = sqlite3.connect(str(path))
-    tables = [r[0] for r in db_peek.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()]
-    db_peek.close()
+    schema, (first, last) = await run_in_threadpool(_load)
+    labels = _signal_labels(state)
+    groups = [
+        {"table": table, "signals": [
+            {"value": f"{table}/{col}", "col": col, "label": labels.get(col, col)} for col in cols
+        ]}
+        for table, cols in schema.items() if cols
+    ]
+    return templates.TemplateResponse(request, "partials/sqlite_export_dialog.html", {
+        "request": request,
+        "t": t,
+        "groups": groups,
+        "first": first,
+        "last": last,
+    })
 
-    safe_name = t.display_name.replace(" ", "_").replace("/", "_")
-    if len(tables) == 1:
-        return StreamingResponse(
-            _generate(),
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{safe_name}.csv"'},
-        )
+
+@router.post("/{target_id}/export/estimate")
+async def export_estimate(target_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    t = _export_target(state, target_id)
+    if t is None:
+        return JSONResponse({"error": "Database file not found"}, status_code=404)
+    try:
+        spec = await _spec_from_form(request, t.file_path)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(await run_in_threadpool(_estimate, t.file_path, spec))
+
+
+async def _export_response(t: SQLiteTargetConfig, spec: sqlite_export.ExportSpec, state: RuntimeState):
+    est = await run_in_threadpool(_estimate, t.file_path, spec)
+    if est["too_large"]:
+        return HTMLResponse(" ".join(est["warnings"]), status_code=413)
+    name = "".join(c if c.isalnum() or c in "-_" else "_" for c in t.display_name)
+    if spec.start or spec.end:
+        start, end = ((s or "")[:10].replace("-", "") for s in (spec.start, spec.end))
+        name += f"_{start}-{end}"
+    csv_name = f"{name}.csv"
+    file_name = f"{name}.zip" if spec.zip else csv_name
     return StreamingResponse(
-        _generate(),
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+        sqlite_export.iter_export(t.file_path, spec, _signal_labels(state), csv_name),
+        media_type="application/zip" if spec.zip else "text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
     )
+
+
+@router.post("/{target_id}/export")
+async def export_csv(target_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    """Export the signals, time range and downsampling chosen in the export dialog."""
+    t = _export_target(state, target_id)
+    if t is None:
+        return HTMLResponse("Database file not found", status_code=404)
+    try:
+        spec = await _spec_from_form(request, t.file_path)
+    except ValueError as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    return await _export_response(t, spec, state)
+
+
+@router.get("/{target_id}/export")
+async def export_csv_all(target_id: str, state: RuntimeState = Depends(get_state)):
+    """Export every signal over the full time range (no dialog)."""
+    t = _export_target(state, target_id)
+    if t is None:
+        return HTMLResponse("Database file not found", status_code=404)
+    schema = await run_in_threadpool(_read_schema, t.file_path)
+    try:
+        spec = sqlite_export.parse_spec(schema, signals=None)
+    except ValueError as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    return await _export_response(t, spec, state)
 
 
 @router.post("/{target_id}/toggle")
