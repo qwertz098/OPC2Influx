@@ -49,3 +49,6 @@ Thumbs.db
 # Logs / shortcuts
 *.log
 *.url
+
+# Machine-specific settings for build_and_push_edge.cmd
+build_and_push_edge.local.cmd
