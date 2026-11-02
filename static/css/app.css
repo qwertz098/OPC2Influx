@@ -89,6 +89,24 @@ body { font-family: var(--font); font-size: 14px; color: var(--text); background
   display: block; word-break: break-all; overflow-wrap: anywhere;
   background: var(--bg); padding: 2px 6px; border-radius: 4px; margin-top: 2px;
 }
+.modal-card-wide { max-width: 720px; max-height: calc(100vh - 32px); overflow-y: auto; }
+
+/* --- CSV export dialog --- */
+.export-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.export-label-row { display: flex; justify-content: space-between; align-items: baseline; }
+.export-signals {
+  max-height: 260px; overflow-y: auto; margin-top: 6px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.export-group + .export-group { margin-top: 8px; }
+.export-group-head { font-weight: 600; }
+.export-signal { padding: 2px 0 2px 22px; font-size: 13px; }
+.export-estimate {
+  padding: 8px 12px; margin-bottom: 12px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.export-estimate.is-warn  { background: #fffbeb; border-color: #f59e0b; }
+.export-estimate.is-error { background: #fef2f2; border-color: #ef4444; }
 
 /* --- Status grid (dashboard) --- */
 .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }

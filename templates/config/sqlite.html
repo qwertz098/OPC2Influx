@@ -54,7 +54,10 @@
                     hx-get="/config/sqlite/{{ t.id }}/edit"
                     hx-target="#edit-{{ t.id | slugify }}"
                     hx-swap="innerHTML">Edit</button>
-            <a class="btn btn-ghost btn-xs" href="/config/sqlite/{{ t.id }}/export">Export CSV</a>
+            <button class="btn btn-ghost btn-xs"
+                    hx-get="/config/sqlite/{{ t.id }}/export/dialog"
+                    hx-target="#modal-root"
+                    hx-swap="innerHTML">Export CSV</button>
             <form action="/config/sqlite/{{ t.id }}/toggle" method="post" style="display:inline">
               <button class="btn btn-ghost btn-xs">{{ 'Disable' if t.enabled else 'Enable' }}</button>
             </form>
@@ -71,6 +74,7 @@
   </table>
 </div>
 {% endif %}
+<div id="modal-root"></div>
 
 <div class="card">
   <div class="card-header">Add SQLite Target</div>

@@ -1,0 +1,226 @@
+<div class="modal-overlay" id="export-dialog">
+  <div class="modal-card modal-card-wide">
+    <form method="post" action="/config/sqlite/{{ t.id }}/export" id="export-form">
+      <div class="export-head">
+        <div class="section-title" style="margin:0">Export CSV — {{ t.display_name }}</div>
+        <button type="button" class="btn btn-ghost btn-xs" data-close>✕</button>
+      </div>
+
+      <div class="form-group">
+        <div class="export-label-row">
+          <label class="form-label">Signals <span class="text-muted" id="export-sel-count"></span></label>
+          <span class="text-sm">
+            <a href="#" data-select="all">All</a> · <a href="#" data-select="none">None</a>
+          </span>
+        </div>
+        <input class="input" type="search" id="export-filter" placeholder="Filter signals…">
+        <div class="export-signals">
+          {% for g in groups %}
+          <div class="export-group">
+            <label class="checkbox-label export-group-head">
+              <input type="checkbox" data-group="{{ loop.index }}"> {{ g.table }}
+              <span class="text-muted text-sm">({{ g.signals | length }})</span>
+            </label>
+            {% for s in g.signals %}
+            <label class="checkbox-label export-signal" data-search="{{ (g.table ~ ' ' ~ s.label ~ ' ' ~ s.col) | lower }}">
+              <input type="checkbox" name="signal" value="{{ s.value }}" checked>
+              {{ s.label }}{% if s.label != s.col %} <span class="mono text-muted text-sm">{{ s.col }}</span>{% endif %}
+            </label>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted text-sm">No signals recorded yet.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Time range <span class="text-muted text-sm">(local time; data from {{ first or '—' }} to {{ last or '—' }} UTC)</span></label>
+        <div class="form-row" style="margin-bottom:6px">
+          <input class="input" type="datetime-local" id="export-from" style="max-width:220px">
+          <span style="align-self:center">–</span>
+          <input class="input" type="datetime-local" id="export-to" style="max-width:220px">
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-ghost btn-xs" data-range="1">Last 24 h</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-range="7">Last 7 days</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-range="30">Last 30 days</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-range="0">All</button>
+        </div>
+        <input type="hidden" name="from">
+        <input type="hidden" name="to">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Downsampling</label>
+          <select class="select" name="interval">
+            <option value="">None (every snapshot)</option>
+            <option value="1m">1 minute</option>
+            <option value="5m">5 minutes</option>
+            <option value="15m">15 minutes</option>
+            <option value="1h">1 hour</option>
+            <option value="1d">1 day (UTC)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Aggregation</label>
+          <select class="select" name="method" disabled>
+            <option value="avg">Average</option>
+            <option value="min">Minimum</option>
+            <option value="max">Maximum</option>
+            <option value="last">Last value</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Format</label>
+          <select class="select" name="format">
+            <option value="standard">Standard ( , and . )</option>
+            <option value="excel_de">Excel, German ( ; and , )</option>
+          </select>
+        </div>
+      </div>
+      <label class="checkbox-label text-sm" style="margin-bottom:12px">
+        <input type="checkbox" name="zip" value="1"> Compress as ZIP
+      </label>
+
+      <div class="export-estimate text-sm" id="export-estimate">Calculating size…</div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="export-submit" disabled>Export</button>
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var dlg = document.getElementById('export-dialog');
+  var form = document.getElementById('export-form');
+  var fromIn = document.getElementById('export-from');
+  var toIn = document.getElementById('export-to');
+  var estBox = document.getElementById('export-estimate');
+  var submit = document.getElementById('export-submit');
+  var lastUtc = {{ (last or '') | tojson }};
+  var zipTouched = false, timer = null, seq = 0;
+
+  function close() { dlg.remove(); document.removeEventListener('keydown', onKey); }
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) close(); });
+  dlg.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', close); });
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function toLocalInput(d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+           'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function toUtc(value, endOfMinute) {
+    if (!value) return '';
+    var d = new Date(value);
+    if (isNaN(d)) return '';
+    if (endOfMinute) d = new Date(d.getTime() + 59999);
+    return d.toISOString().slice(0, 19).replace('T', ' ');
+  }
+  function syncHidden() {
+    form.elements['from'].value = toUtc(fromIn.value, false);
+    form.elements['to'].value = toUtc(toIn.value, true);
+  }
+
+  dlg.querySelectorAll('[data-range]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var days = +b.dataset.range;
+      if (!days) { fromIn.value = ''; toIn.value = ''; }
+      else {
+        var end = lastUtc ? new Date(lastUtc.replace(' ', 'T') + 'Z') : new Date();
+        toIn.value = '';
+        fromIn.value = toLocalInput(new Date(end.getTime() - days * 86400000));
+      }
+      schedule();
+    });
+  });
+
+  var boxes = Array.prototype.slice.call(form.querySelectorAll('input[name=signal]'));
+  var groups = Array.prototype.slice.call(dlg.querySelectorAll('.export-group'));
+  function refreshGroups() {
+    groups.forEach(function (g) {
+      var items = g.querySelectorAll('input[name=signal]');
+      var on = g.querySelectorAll('input[name=signal]:checked').length;
+      var head = g.querySelector('[data-group]');
+      head.checked = on === items.length;
+      head.indeterminate = on > 0 && on < items.length;
+    });
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    document.getElementById('export-sel-count').textContent = '(' + n + ' of ' + boxes.length + ')';
+  }
+  groups.forEach(function (g) {
+    g.querySelector('[data-group]').addEventListener('change', function (e) {
+      g.querySelectorAll('.export-signal').forEach(function (row) {
+        if (row.style.display !== 'none') row.querySelector('input').checked = e.target.checked;
+      });
+      refreshGroups(); schedule();
+    });
+  });
+  dlg.querySelectorAll('[data-select]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      var on = a.dataset.select === 'all';
+      dlg.querySelectorAll('.export-signal').forEach(function (row) {
+        if (row.style.display !== 'none') row.querySelector('input').checked = on;
+      });
+      refreshGroups(); schedule();
+    });
+  });
+  document.getElementById('export-filter').addEventListener('input', function (e) {
+    var q = e.target.value.trim().toLowerCase();
+    dlg.querySelectorAll('.export-signal').forEach(function (row) {
+      row.style.display = !q || row.dataset.search.indexOf(q) !== -1 ? '' : 'none';
+    });
+  });
+
+  form.elements['interval'].addEventListener('change', function () {
+    form.elements['method'].disabled = !this.value;
+  });
+  form.elements['zip'].addEventListener('change', function () { zipTouched = true; });
+  form.addEventListener('change', function (e) {
+    if (e.target.type !== 'search') { refreshGroups(); schedule(); }
+  });
+
+  function fmtBytes(n) {
+    var u = ['B', 'KB', 'MB', 'GB'], i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i ? n.toFixed(1) : n) + ' ' + u[i];
+  }
+  function schedule() { clearTimeout(timer); timer = setTimeout(estimate, 250); }
+  function estimate() {
+    syncHidden();
+    var mine = ++seq;
+    submit.disabled = true;
+    estBox.className = 'export-estimate text-sm';
+    estBox.textContent = 'Calculating size…';
+    fetch(form.action + '/estimate', { method: 'POST', body: new FormData(form) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (mine !== seq) return;
+        if (d.error) { estBox.classList.add('is-error'); estBox.textContent = d.error; return; }
+        if (!zipTouched) form.elements['zip'].checked = d.suggest_zip;
+        var text = '≈ ' + d.rows.toLocaleString() + ' rows · ≈ ' + fmtBytes(d.bytes) + ' uncompressed';
+        if (form.elements['zip'].checked) text += ' (ZIP typically 5–10× smaller)';
+        estBox.textContent = text;
+        d.warnings.forEach(function (w) {
+          var p = document.createElement('div'); p.textContent = '⚠ ' + w; estBox.appendChild(p);
+        });
+        if (d.too_large) estBox.classList.add('is-error');
+        else if (d.warnings.length) estBox.classList.add('is-warn');
+        submit.disabled = d.too_large || d.rows === 0;
+      })
+      .catch(function () {
+        if (mine === seq) { estBox.classList.add('is-error'); estBox.textContent = 'Size estimate failed.'; }
+      });
+  }
+
+  form.addEventListener('submit', function () { syncHidden(); setTimeout(close, 0); });
+  refreshGroups();
+  estimate();
+})();
+</script>
