@@ -40,7 +40,7 @@ async def _count_total_rows(file_path: str) -> int | None:
 async def list_targets(request: Request, state: RuntimeState = Depends(get_state)):
     total_rows: dict[str, int | None] = {}
     for t in state.config.sqlite.targets:
-        total_rows[t.id] = await _count_total_rows(t.file_path)
+        total_rows[t.id] = await _count_total_rows(t.path)
     return templates.TemplateResponse(request, "config/sqlite.html", {
         "request": request,
         "targets": state.config.sqlite.targets,
@@ -114,7 +114,7 @@ def _signal_labels(state: RuntimeState) -> dict[str, str]:
 
 def _export_target(state: RuntimeState, target_id: str) -> SQLiteTargetConfig | None:
     t = next((t for t in state.config.sqlite.targets if t.id == target_id), None)
-    if t is None or not Path(t.file_path).exists():
+    if t is None or not Path(t.path).exists():
         return None
     return t
 
@@ -157,7 +157,7 @@ async def export_dialog(target_id: str, request: Request, state: RuntimeState = 
         return HTMLResponse("Database file not found", status_code=404)
 
     def _load():
-        db = sqlite_export.connect(t.file_path)
+        db = sqlite_export.connect(t.path)
         try:
             schema = sqlite_export.read_schema(db)
             return schema, sqlite_export.time_bounds(db, schema)
@@ -187,14 +187,14 @@ async def export_estimate(target_id: str, request: Request, state: RuntimeState 
     if t is None:
         return JSONResponse({"error": "Database file not found"}, status_code=404)
     try:
-        spec = await _spec_from_form(request, t.file_path)
+        spec = await _spec_from_form(request, t.path)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    return JSONResponse(await run_in_threadpool(_estimate, t.file_path, spec))
+    return JSONResponse(await run_in_threadpool(_estimate, t.path, spec))
 
 
 async def _export_response(t: SQLiteTargetConfig, spec: sqlite_export.ExportSpec, state: RuntimeState):
-    est = await run_in_threadpool(_estimate, t.file_path, spec)
+    est = await run_in_threadpool(_estimate, t.path, spec)
     if est["too_large"]:
         return HTMLResponse(" ".join(est["warnings"]), status_code=413)
     name = "".join(c if c.isalnum() or c in "-_" else "_" for c in t.display_name)
@@ -204,7 +204,7 @@ async def _export_response(t: SQLiteTargetConfig, spec: sqlite_export.ExportSpec
     csv_name = f"{name}.csv"
     file_name = f"{name}.zip" if spec.zip else csv_name
     return StreamingResponse(
-        sqlite_export.iter_export(t.file_path, spec, _signal_labels(state), csv_name),
+        sqlite_export.iter_export(t.path, spec, _signal_labels(state), csv_name),
         media_type="application/zip" if spec.zip else "text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
     )
@@ -217,7 +217,7 @@ async def export_csv(target_id: str, request: Request, state: RuntimeState = Dep
     if t is None:
         return HTMLResponse("Database file not found", status_code=404)
     try:
-        spec = await _spec_from_form(request, t.file_path)
+        spec = await _spec_from_form(request, t.path)
     except ValueError as exc:
         return HTMLResponse(str(exc), status_code=400)
     return await _export_response(t, spec, state)
@@ -229,7 +229,7 @@ async def export_csv_all(target_id: str, state: RuntimeState = Depends(get_state
     t = _export_target(state, target_id)
     if t is None:
         return HTMLResponse("Database file not found", status_code=404)
-    schema = await run_in_threadpool(_read_schema, t.file_path)
+    schema = await run_in_threadpool(_read_schema, t.path)
     try:
         spec = sqlite_export.parse_spec(schema, signals=None)
     except ValueError as exc:
