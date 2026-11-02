@@ -33,6 +33,8 @@
           <span class="badge badge-warn">Disabled</span>
           {% elif status and status.last_error %}
           <span class="badge badge-error" title="{{ status.last_error }}">Error</span>
+          {% elif status and status.skipped_signals %}
+          <span class="badge badge-warn" title="At most 1999 signals per server fit into one SQLite table">{{ status.skipped_signals }} signals skipped</span>
           {% elif status and status.last_write %}
           <span class="badge badge-ok">Writing</span>
           {% else %}

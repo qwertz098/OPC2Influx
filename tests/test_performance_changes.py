@@ -374,3 +374,31 @@ async def test_process_value_updates_last_changed_at_only_on_change(engine_with_
     await engine._process_value(sub, 2.0, mgr)  # changed — timestamp must advance
     assert engine._sub_state[sub.id].last_changed_at > first_changed_at
     assert engine._sub_state[sub.id].last_raw_value == 2.0
+
+
+@pytest.mark.asyncio
+async def test_sqlite_writer_skips_signals_beyond_column_limit(tmp_path, monkeypatch):
+    import app.sqlite.writer as writer_mod
+    monkeypatch.setattr(writer_mod, "MAX_COLUMNS", 4)  # time + 3 signals per table
+    srv = ServerConfig(id="srv1", display_name="Line 1", endpoint_url="opc.tcp://x")
+    subs = []
+    for i in range(5):
+        sub = _sub("srv1", f"ns=2;s={i}")
+        sub.influxdb.measurement = f"m{i}"
+        subs.append(sub)
+    state = _make_state(tmp_path, servers=[srv], subscriptions=subs)
+    state.polling_engine = SimpleNamespace(live_values=lambda: {s.id: 1.0 for s in subs})
+
+    writer = SQLiteWriter(SQLiteTargetConfig(file_path=str(tmp_path / "snap.db")), state)
+    try:
+        await writer._snapshot()
+        await writer._snapshot()
+        cols = [r[1] for r in await (await writer._db.execute("PRAGMA table_info([Line_1])")).fetchall()]
+        assert len(cols) == 4
+        rows = await (await writer._db.execute("SELECT COUNT(*) FROM [Line_1]")).fetchone()
+        assert rows[0] == 2  # the signals that fit are still written every interval
+        assert writer.status.skipped_signals == 2 and writer.status.last_error is None
+        warnings = [a for a in state.active_alarms if a.source.startswith("sqlite:")]
+        assert len(warnings) == 1  # warned once, not on every snapshot
+    finally:
+        await writer.stop()
