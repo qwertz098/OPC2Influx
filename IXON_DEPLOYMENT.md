@@ -109,7 +109,7 @@ chmod +x build_and_push_edge.sh
 ```
 
 Both scripts:
-1. Create a buildx builder named `secure-edge-pro` (with insecure registry config from `buildkitd-secure-edge-pro.toml`)
+1. Create a buildx builder named `secure-edge-pro-<gateway-ip>` (dots replaced by dashes) that is allowed to push to `<gateway-ip>:5000` over plain HTTP. The registry config is generated from `EDGE_IP`, so a different gateway IP automatically gets its own builder
 2. Cross-compile the Docker image for `linux/arm64/v8`
 3. Push the image to `<gateway-ip>:5000/opcua2influxdb:latest`
 
@@ -121,16 +121,24 @@ EDGE_IP=10.0.0.50 IMAGE_NAME=myapp IMAGE_TAG=v2 ./build_and_push_edge.sh
 ```
 
 **Windows:**
-Edit the `set` lines at the top of `build_and_push_edge.cmd`.
+Create `build_and_push_edge.local.cmd` next to the script (it is ignored by git) with your values, e.g.:
+```cmd
+set EDGE_IP=10.0.0.50
+```
+Do not edit `build_and_push_edge.cmd` itself: it runs `git pull` before every build to update itself, and local edits would block that.
 
 ### Option B: Manual Commands
 
 If you prefer to run the commands yourself:
 
 ```bash
-# 1. Create a buildx builder with insecure registry support
+# 1. Create a buildx builder that may push to the gateway over plain HTTP
+cat > buildkitd-edge.toml <<'TOML'
+[registry."<gateway-ip>:5000"]
+  http = true
+TOML
 docker buildx create --name secure-edge-pro \
-  --config buildkitd-secure-edge-pro.toml
+  --config buildkitd-edge.toml
 
 # 2. Select the builder
 docker buildx use secure-edge-pro
@@ -285,11 +293,15 @@ Your configuration and data persist in the named volumes — no reconfiguration 
 - Ensure Docker Desktop has `<gateway-ip>:5000` in `insecure-registries` and has been restarted
 - Check that the SEP's Docker service is running
 
+### "broken pipe" during the push, followed by "connection refused"
+
+The registry accepted the upload and then went away mid-transfer, usually because the gateway ran out of storage (every push of `:latest` leaves the old layers in the registry). Free space by removing unused images and containers in the gateway web interface, then run the script again: layers that already arrived are not uploaded again.
+
 ### Build fails with "no matching manifest for linux/arm64"
 
 The base image `python:3.12-slim` supports ARM64. If you see this error:
 - Ensure you are using `docker buildx build` (not `docker build`)
-- Verify the builder is active: `docker buildx inspect secure-edge-pro`
+- Verify the builder is active: `docker buildx ls` should list `secure-edge-pro-<gateway-ip>`
 
 ### Container starts but web UI is not reachable
 

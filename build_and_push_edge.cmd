@@ -12,6 +12,11 @@ cd /d "%~dp0"
 
 if exist "build_and_push_edge.local.cmd" call "build_and_push_edge.local.cmd"
 
+rem One builder per gateway IP: buildkit only reads its registry config when a
+rem builder is created, so a new IP gets a fresh builder that allows plain HTTP.
+set BUILDER=secure-edge-pro-%EDGE_IP:.=-%
+set BUILDKIT_TOML=%TEMP%\buildkitd-%BUILDER%.toml
+
 rem Everything runs inside one parenthesised block: cmd parses it completely
 rem before running it, so when git pull overwrites this file the current run
 rem is unaffected and the new version takes effect on the next start.
@@ -25,10 +30,14 @@ rem is unaffected and the new version takes effect on the next start.
         exit /b 1
     )
 
-    docker buildx inspect secure-edge-pro >nul 2>&1 || (
-        docker buildx create --name secure-edge-pro --config buildkitd-secure-edge-pro.toml
+    docker buildx inspect %BUILDER% >nul 2>&1 || (
+        (
+            echo [registry."%EDGE_IP%:5000"]
+            echo   http = true
+        ) > "%BUILDKIT_TOML%"
+        docker buildx create --name %BUILDER% --config "%BUILDKIT_TOML%" --bootstrap
     )
-    docker buildx use secure-edge-pro
+    docker buildx use %BUILDER%
     docker buildx build --platform linux/arm64/v8 --tag %EDGE_IP%:5000/%IMAGE_NAME%:%IMAGE_TAG% --push .
     PAUSE
     exit /b
