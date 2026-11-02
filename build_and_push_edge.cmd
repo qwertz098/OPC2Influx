@@ -1,4 +1,6 @@
 @echo off
+rem Delayed expansion: APP_RELEASE is set after git pull, inside the block below
+setlocal EnableDelayedExpansion
 rem Defaults. Do not edit them here: put machine-specific values into
 rem build_and_push_edge.local.cmd next to this script (ignored by git), e.g.
 rem     set EDGE_IP=192.168.140.1
@@ -38,7 +40,10 @@ rem is unaffected and the new version takes effect on the next start.
         docker buildx create --name %BUILDER% --config "%BUILDKIT_TOML%" --bootstrap
     )
     docker buildx use %BUILDER%
-    docker buildx build --platform linux/arm64/v8 --tag %EDGE_IP%:5000/%IMAGE_NAME%:%IMAGE_TAG% --push .
+    rem Release shown on the settings page, e.g. v0.1.4 or v0.1.4-3-gabc1234
+    set APP_RELEASE=dev
+    for /f "delims=" %%v in ('git describe --tags --always --dirty 2^>nul') do set APP_RELEASE=%%v
+    docker buildx build --platform linux/arm64/v8 --build-arg APP_RELEASE=!APP_RELEASE! --tag %EDGE_IP%:5000/%IMAGE_NAME%:%IMAGE_TAG% --push .
     PAUSE
     exit /b
 )

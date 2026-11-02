@@ -42,4 +42,8 @@ ENV APP_CONFIG_DIR=/config \
 
 VOLUME ["/config", "/data"]
 
+# Release shown on the settings page; the release workflow passes the tag
+ARG APP_RELEASE=dev
+ENV APP_RELEASE=${APP_RELEASE}
+
 CMD ["sh", "-c", "uvicorn app.main:app --host ${APP_HOST} --port ${APP_PORT}"]

@@ -18,6 +18,10 @@ fi
 
 docker buildx use "$BUILDER"
 
+# Release shown on the settings page, e.g. v0.1.4 or v0.1.4-3-gabc1234
+APP_RELEASE="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+
 docker buildx build --platform linux/arm64/v8 \
+                    --build-arg APP_RELEASE="${APP_RELEASE}" \
                     --tag ${EDGE_IP}:5000/${IMAGE_NAME}:${IMAGE_TAG} \
                     --push .

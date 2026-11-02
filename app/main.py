@@ -6,7 +6,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -43,6 +45,26 @@ logger = logging.getLogger(__name__)
 
 _APP_VERSION = str(int(time.time()))
 
+
+def _release_version() -> str:
+    """Release shown in the UI: APP_RELEASE (set from the git tag at image
+    build time), else `git describe` for a source checkout, else "dev"."""
+    release = os.environ.get("APP_RELEASE", "").strip()
+    if release:
+        return release
+    try:
+        out = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True, text=True, timeout=2,
+        )
+        return out.stdout.strip() or "dev"
+    except Exception:
+        return "dev"
+
+
+_APP_RELEASE = _release_version()
+
 # site_name: env var SITE_NAME overrides config (useful for Docker).
 # Resolved at startup; UI settings apply the config value when env var is absent.
 _SITE_NAME_ENV = os.environ.get("SITE_NAME", "").strip()
@@ -68,6 +90,7 @@ def _make_jinja_env(templates: Jinja2Templates) -> None:
     """Register custom Jinja2 filters and globals."""
     _all_template_envs.append(templates.env)
     templates.env.globals["app_version"] = _APP_VERSION
+    templates.env.globals["app_release"] = _APP_RELEASE
     templates.env.globals["site_name"] = _SITE_NAME
     import re
     def slugify(value: str) -> str:
