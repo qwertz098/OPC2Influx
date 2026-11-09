@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.dependencies import get_state
+from app.influxdb.size import bucket_sizes
 from app.state import RuntimeState
 from app.routers.sqlite_config import _count_total_rows
 
@@ -33,6 +35,16 @@ def _influx_bytes_per_day(state: RuntimeState) -> dict[str, int | None]:
         if st:
             result[t.id] = _bytes_per_day(st.bytes_estimated, st.started_at)
     return result
+
+
+async def _influx_sizes(state: RuntimeState) -> tuple[dict, dict]:
+    """Real bucket size and growth per enabled target, from InfluxDB's /metrics."""
+    targets = [t for t in state.config.influxdb.targets if t.enabled]
+    sizes = await asyncio.gather(*(bucket_sizes.size(t) for t in targets))
+    return (
+        {t.id: s for t, s in zip(targets, sizes)},
+        {t.id: bucket_sizes.bytes_per_day(t.id) for t in targets},
+    )
 
 
 def _sqlite_bytes_per_day(state: RuntimeState) -> dict[str, int | None]:
@@ -79,6 +91,7 @@ async def _sqlite_total_rows(state: RuntimeState) -> dict[str, int | None]:
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, state: RuntimeState = Depends(get_state)):
+    influx_sizes, influx_growth = await _influx_sizes(state)
     servers = state.config.servers.servers
     targets = state.config.influxdb.targets
     subs_count = len([s for s in state.config.subscriptions.subscriptions if s.enabled])
@@ -89,6 +102,8 @@ async def dashboard(request: Request, state: RuntimeState = Depends(get_state)):
         "targets": targets,
         "influx_status": state.influx_status,
         "influx_bytes_per_day": _influx_bytes_per_day(state),
+        "influx_sizes": influx_sizes,
+        "influx_growth": influx_growth,
         "subs_count": subs_count,
         "active_alarms": state.active_alarms[-20:],
         "sqlite_targets": state.config.sqlite.targets,
@@ -102,6 +117,7 @@ async def dashboard(request: Request, state: RuntimeState = Depends(get_state)):
 @router.get("/status", response_class=HTMLResponse)
 async def status_fragment(request: Request, state: RuntimeState = Depends(get_state)):
     """HTMX fragment for auto-refreshing status cards."""
+    influx_sizes, influx_growth = await _influx_sizes(state)
     servers = state.config.servers.servers
     targets = state.config.influxdb.targets
     subs_count = len([s for s in state.config.subscriptions.subscriptions if s.enabled])
@@ -112,6 +128,8 @@ async def status_fragment(request: Request, state: RuntimeState = Depends(get_st
         "targets": targets,
         "influx_status": state.influx_status,
         "influx_bytes_per_day": _influx_bytes_per_day(state),
+        "influx_sizes": influx_sizes,
+        "influx_growth": influx_growth,
         "subs_count": subs_count,
         "active_alarms": state.active_alarms[-50:],
         "sqlite_targets": state.config.sqlite.targets,
