@@ -60,6 +60,8 @@
       </label>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
+              title="Fill the area under each mean line">▨ Shaded</button>
       <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
       <span style="margin-left:auto"></span>
       <button class="btn btn-ghost btn-sm" onclick="saveView()" title="Save signals, multipliers and range length as a named view">Save view</button>
@@ -165,6 +167,7 @@ const SS_KEY = 'history_state';
 let selectedSignals = new Map(); // key → {server_id, node_id, path, name, color, label, raw}
 let multipliers     = new Map(); // key → float
 let autoScaleMode   = false;
+let shadedMode        = false;
 let mode      = 'last';          // last | fromto | startdur
 let presetSec = 86400;           // active quick range (mode "last"), 0 = custom
 let range     = null;            // [from, to] ms — the whole range (overview)
@@ -304,6 +307,7 @@ function mainSeries() {
       data: d.map(p => [p[0], (p[3] - p[2]) * m])});
     series.push({id: 'mean|' + key, name: sigLabel(sig), type: 'line', xAxisIndex: 0, yAxisIndex: 0,
       symbol: 'none', lineStyle: {color: sig.color, width: 1.5}, itemStyle: {color: sig.color},
+      areaStyle: shadedMode ? {color: sig.color, opacity: 0.10} : undefined,
       data: d.map(p => [p[0], p[1] * m])});
   }
   return series;
@@ -329,7 +333,7 @@ function tooltipFormatter(params) {
     const row = (mainData.get(key) || [])[p.dataIndex];
     if (!row) continue;
     html += `<br><span style="color:${p.color}">●</span> ${p.seriesName}: <b>${fmtVal(row[1])}</b>` +
-            ` <span style="color:#94a3b8">(${fmtVal(row[2])} – ${fmtVal(row[3])})</span>`;
+            ` <span style="color:${chartColors().muted}">(${fmtVal(row[2])} – ${fmtVal(row[3])})</span>`;
   }
   return html;
 }
@@ -342,26 +346,28 @@ function renderChart() {
     return;
   }
   const c = getOrInitChart();
+  const k = chartColors();
   c.setOption({
     animation: false,
     grid: [{left: 60, right: 24, top: 20, bottom: 130}, {left: 60, right: 24, height: 60, bottom: 34}],
     xAxis: [
-      {type: 'time', gridIndex: 0, min: range[0], max: range[1]},
-      {type: 'time', gridIndex: 1, min: range[0], max: range[1],
-       axisLabel: {fontSize: 10, color: '#94a3b8'}, splitLine: {show: false}},
+      themedAxis(k, {type: 'time', gridIndex: 0, min: range[0], max: range[1]}),
+      themedAxis(k, {type: 'time', gridIndex: 1, min: range[0], max: range[1],
+       axisLabel: {fontSize: 10}, splitLine: {show: false}}),
     ],
     yAxis: [
-      {type: 'value', gridIndex: 0, scale: autoScaleMode, axisLine: {show: true}},
-      {type: 'value', gridIndex: 1, scale: true, axisLabel: {show: false}, splitLine: {show: false}},
+      themedAxis(k, {type: 'value', gridIndex: 0, scale: autoScaleMode, axisLine: {show: true}}),
+      themedAxis(k, {type: 'value', gridIndex: 1, scale: true, axisLabel: {show: false}, splitLine: {show: false}}),
     ],
     dataZoom: [
       {id: 'inside', type: 'inside', xAxisIndex: 0, filterMode: 'none',
        startValue: win[0], endValue: win[1], moveOnMouseMove: true},
       {id: 'slider', type: 'slider', xAxisIndex: 0, filterMode: 'none', startValue: win[0], endValue: win[1],
        height: 60, bottom: 34, left: 60, right: 24, showDataShadow: false, backgroundColor: 'rgba(0,0,0,0)',
-       fillerColor: 'rgba(37,99,235,0.12)', borderColor: '#cbd5e1', labelFormatter: v => fmtTime(v)},
+       fillerColor: hexAlpha(k.accent, 0.12), borderColor: k.line, handleStyle: {color: k.surface, borderColor: k.frame}, moveHandleStyle: {color: k.line},
+       textStyle: {color: k.muted}, labelFormatter: v => fmtTime(v)},
     ],
-    tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}, formatter: tooltipFormatter},
+    tooltip: themedTooltip(k, {trigger: 'axis', axisPointer: {type: 'cross'}, formatter: tooltipFormatter}),
     legend: {show: false},
     series: mainSeries().concat(overviewSeries()),
   }, true);
@@ -396,7 +402,7 @@ function setupBoxZoom() {
     const g = chart.getModel().getComponent('grid', 0).coordinateSystem.getRect();
     chart.setOption({graphic: [{id: 'box', type: 'rect', silent: true,
       shape: {x: Math.min(startX, e.offsetX), y: g.y, width: Math.abs(e.offsetX - startX), height: g.height},
-      style: {fill: 'rgba(37,99,235,0.10)', stroke: 'rgba(37,99,235,0.6)'}}]});
+      style: {fill: hexAlpha(chartColors().accent, 0.10), stroke: hexAlpha(chartColors().accent, 0.6)}}]});
   });
   zr.on('mouseup', e => {
     if (startX === null) return;
@@ -547,6 +553,12 @@ function toggleAutoScale() {
   if (chart && range) chart.setOption({yAxis: [{scale: autoScaleMode}, {}]});
   saveState();
 }
+function toggleShaded() {
+  shadedMode = !shadedMode;
+  styleToggle(document.getElementById('shadedBtn'), shadedMode);
+  if (chart && range) renderChart();
+  saveState();
+}
 function styleToggle(btn, on) {
   btn.style.background = on ? 'var(--primary-bg,#e8f0fe)' : '';
   btn.style.fontWeight = on ? '600' : '';
@@ -631,7 +643,7 @@ function saveState() {
   const state = {
     signals: Array.from(selectedSignals.entries()),
     multipliers: Array.from(multipliers.entries()),
-    autoScaleMode, mode, presetSec, range, win,
+    autoScaleMode, shadedMode, mode, presetSec, range, win,
     follow: !!followTimer,
     target: document.getElementById('targetSel')?.value || null,
   };
@@ -646,6 +658,8 @@ function restoreState() {
   multipliers = new Map(state.multipliers || []);
   autoScaleMode = !!state.autoScaleMode;
   styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+  shadedMode = !!state.shadedMode;
+  styleToggle(document.getElementById('shadedBtn'), shadedMode);
   const sel = document.getElementById('targetSel');
   if (sel && state.target && sel.querySelector(`option[value="${state.target}"]`)) sel.value = state.target;
   for (const key of selectedSignals.keys()) {
@@ -711,7 +725,7 @@ async function saveView() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name: name.trim(), signals: Array.from(selectedSignals.values()),
-        auto_scale_mode: autoScaleMode, multipliers: mul, history_range_seconds: rangeSec}),
+        auto_scale_mode: autoScaleMode, shaded: shadedMode, multipliers: mul, history_range_seconds: rangeSec}),
     });
     const saved = await resp.json();
     await _refreshViewDropdown();
@@ -741,6 +755,8 @@ async function loadSelectedView() {
     }
     autoScaleMode = !!cfg.auto_scale_mode;
     styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+    shadedMode = !!cfg.shaded;
+    styleToggle(document.getElementById('shadedBtn'), shadedMode);
     applyPreset(cfg.history_range_seconds || presetSec || 86400);
   } catch (e) {
     alert('Load failed: ' + e.message);
@@ -766,6 +782,7 @@ document.querySelectorAll('#modeSeg .seg-btn').forEach(b => b.addEventListener('
 document.querySelectorAll('#quickChips .chip').forEach(c => c.addEventListener('click', () => applyPreset(+c.dataset.s)));
 document.getElementById('followChk').addEventListener('change', e => e.target.checked ? startFollow() : (stopFollow(), saveState()));
 window.addEventListener('beforeunload', saveState);
+window.addEventListener('themechange', () => { if (chart && range) renderChart(); });
 
 const _now = Date.now();
 document.getElementById('fromInp').value = toLocalInput(_now - 6 * 36e5);

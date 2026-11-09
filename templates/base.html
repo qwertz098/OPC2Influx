@@ -6,6 +6,8 @@
   <title>{% block title %}Opc2Influx{% endblock %}{% if site_name %} — {{ site_name }}{% endif %}</title>
   <script src="/static/vendor/htmx@2.0.4.min.js" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <script src="/static/js/theme.js?v={{ app_version }}"></script>
+  <link rel="stylesheet" href="/static/css/themes.css?v={{ app_version }}">
   <link rel="stylesheet" href="/static/css/app.css?v={{ app_version }}">
 </head>
 <body>

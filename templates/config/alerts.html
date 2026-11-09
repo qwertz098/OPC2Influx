@@ -369,7 +369,7 @@ function filterSubs(val) {
   dd.style.display = 'block';
 }
 function closeSubDd() { document.getElementById('sub-dropdown').style.display = 'none'; }
-function hiSub(el, on) { el.style.background = on ? 'var(--accent,#3b82f6)' : ''; el.style.color = on ? '#fff' : ''; }
+function hiSub(el, on) { el.style.background = on ? 'var(--accent,#3b82f6)' : ''; el.style.color = on ? 'var(--on-accent)' : ''; }
 function pickSub(el) {
   document.getElementById('sub-display').value = el.textContent;
   document.getElementById('sub-id-hidden').value = el.dataset.id;

@@ -227,14 +227,22 @@ async function fetchAndRender() {
   }));
 
   const legendData = results.map(s => s.col);
+  // Theme colours (the canvas cannot read CSS variables itself)
+  const css = getComputedStyle(document.documentElement);
+  const c = name => css.getPropertyValue(name).trim();
+  const axis = {
+    axisLine: { lineStyle: { color: c('--frame') } }, axisTick: { lineStyle: { color: c('--frame') } },
+    axisLabel: { color: c('--muted') }, splitLine: { lineStyle: { color: c('--grid') } },
+  };
 
   chart.setOption({
     animation: false,
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { top: 4, data: legendData, textStyle: { fontSize: 12 } },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' },
+               backgroundColor: c('--panel-raised'), borderColor: c('--line'), textStyle: { color: c('--fg') } },
+    legend: { top: 4, data: legendData, textStyle: { fontSize: 12, color: c('--fg') } },
     grid: { left: 56, right: 20, top: 36, bottom: 108 },
-    xAxis: { type: 'time', boundaryGap: false },
-    yAxis: { type: 'value', scale: true },
+    xAxis: { type: 'time', boundaryGap: false, ...axis },
+    yAxis: { type: 'value', scale: true, ...axis },
     dataZoom: [
       { type: 'inside', xAxisIndex: 0 },
       {
@@ -242,10 +250,11 @@ async function fetchAndRender() {
         xAxisIndex: 0,
         bottom: 8,
         height: 52,
-        fillerColor: 'rgba(78,121,216,0.15)',
-        borderColor: 'var(--border, #ddd)',
-        handleStyle: { color: '#4e79d8' },
-        textStyle: { fontSize: 10 },
+        fillerColor: hexAlpha(c('--accent'), 0.15),
+        borderColor: c('--line'),
+        handleStyle: { color: c('--accent') },
+        moveHandleStyle: { color: c('--line') },
+        textStyle: { fontSize: 10, color: c('--muted') },
       },
     ],
     series,
@@ -293,5 +302,11 @@ function onDataZoom(params) {
 
 // Resize chart with window
 window.addEventListener('resize', () => { if (chart) chart.resize(); });
+window.addEventListener('themechange', () => { if (chart && selectedSignals.size) fetchAndRender(); });
+
+function hexAlpha(hex, a) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
 </script>
 {% endblock %}

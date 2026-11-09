@@ -28,6 +28,8 @@
               title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
+              title="Fill the area under each line">▨ Shaded</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
              title="Sliding window: only the most recent data is kept; older points scroll off. ∞ keeps everything (up to the memory cap).">
         Time frame:
@@ -52,7 +54,7 @@
         <button id="loadViewBtn"   class="btn btn-ghost btn-sm" onclick="loadSelectedView()"   title="Load selected view"                         disabled>Load</button>
         <button id="deleteViewBtn" class="btn btn-ghost btn-sm" onclick="deleteSelectedView()" title="Delete selected view" style="color:var(--red,#ef4444)" disabled>✕</button>
         <button id="openEmbedBtn"  class="btn btn-ghost btn-sm" onclick="openEmbedView()"      title="Open embedded view in new tab" disabled>↗</button>
-        <span class="info-icon" title="URL suffixes for the embed view: /dark (default), /dark_shaded, /light, /light_shaded. Example: /chart/embed/{id}/light_shaded"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+        <span class="info-icon" title="Embed view appearance: add parameters joined by +&#10;Scheme: dark (default), light, medium, solarized-light, solarized-dark, system&#10;Look: studio (default), mono, contrast&#10;shaded: fill the area under the lines&#10;Example: /chart/embed/{id}/light+contrast+shaded"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
       </div>
     </div>
   </div>
@@ -180,6 +182,7 @@ let paused           = false;
 let polling          = false;
 let logTimeMode      = false;
 let autoScaleMode    = false;
+let shadedMode         = false;
 let chartInitialized = false;
 let pollingTimer     = null;
 let startedAt        = null;
@@ -323,6 +326,8 @@ document.getElementById('intervalSel').addEventListener('change', () => {
 });
 
 // ─── Keep polling alive when tab is shown again ───────────────────────────────
+window.addEventListener('themechange', () => { chartInitialized = false; renderChart(); });
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && running && !paused) {
     clearInterval(pollingTimer);
@@ -340,6 +345,19 @@ function toggleLogTime() {
   btn.style.fontWeight  = logTimeMode ? '600' : '';
   chartInitialized = false;
   renderChart();
+}
+
+// ─── Fill toggle ──────────────────────────────────────────────────────────────
+function toggleShaded() {
+  shadedMode = !shadedMode;
+  styleShadedBtn();
+  chartInitialized = false;
+  renderChart();
+}
+function styleShadedBtn() {
+  const btn = document.getElementById('shadedBtn');
+  btn.style.background = shadedMode ? 'var(--primary-bg,#e8f0fe)' : '';
+  btn.style.fontWeight = shadedMode ? '600' : '';
 }
 
 // ─── Auto scale toggle ────────────────────────────────────────────────────────
@@ -418,6 +436,7 @@ function buildSeries() {
       showSymbol: false,
       lineStyle: {color: sig.color, width: 1.5},
       itemStyle: {color: sig.color},
+      areaStyle: shadedMode ? {color: sig.color, opacity: 0.12} : undefined,
       data,
     });
   }
@@ -466,17 +485,18 @@ function initChart() {
     type: 'time',
   };
 
+  const colors = chartColors();
   c.setOption({
     animation: false,
     grid: {left: 60, right: 20, top: 40, bottom: 40},
-    tooltip: {
+    tooltip: themedTooltip(colors, {
       trigger: 'axis',
       axisPointer: {type: 'cross'},
       formatter: tooltipFormatter,
-    },
+    }),
     legend: {show: false},
-    xAxis,
-    yAxis: {type: 'value', axisLine: {show: true}, scale: autoScaleMode},
+    xAxis: themedAxis(colors, xAxis),
+    yAxis: themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode}),
     series: buildSeries(),
   }, true);   // notMerge=true: full reset (only on structural changes)
 
@@ -612,6 +632,7 @@ function saveState() {
     paused,
     logTimeMode,
     autoScaleMode,
+    shadedMode,
     startedAt,
     interval: document.getElementById('intervalSel').value,
     maxTime:  document.getElementById('maxTimeSel').value,
@@ -625,6 +646,8 @@ function restoreState() {
   if (!raw) return;
   let state;
   try { state = JSON.parse(raw); } catch { return; }
+  shadedMode = !!state.shadedMode;   // display preference, kept even without signals
+  styleShadedBtn();
   if (!state.signals || !state.signals.length) return;
 
   // Restore Maps
@@ -737,6 +760,7 @@ async function saveView() {
     max_time_seconds: parseInt(document.getElementById('maxTimeSel').value),
     log_time_mode: logTimeMode,
     auto_scale_mode: autoScaleMode,
+    shaded: shadedMode,
     multipliers: mul,
   };
   try {
@@ -776,6 +800,8 @@ async function loadSelectedView() {
     document.getElementById('maxTimeSel').value  = String(cfg.max_time_seconds || 3600);
     logTimeMode   = !!cfg.log_time_mode;
     autoScaleMode = !!cfg.auto_scale_mode;
+    shadedMode      = !!cfg.shaded;
+    styleShadedBtn();
     const logBtn   = document.getElementById('logTimeBtn');
     logBtn.style.background = logTimeMode   ? 'var(--primary-bg,#e8f0fe)' : '';
     logBtn.style.fontWeight  = logTimeMode   ? '600' : '';

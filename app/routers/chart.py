@@ -214,6 +214,7 @@ async def save_chart_config(request: Request, state: RuntimeState = Depends(get_
         max_time_seconds=body.get("max_time_seconds", 3600),
         log_time_mode=bool(body.get("log_time_mode", False)),
         auto_scale_mode=bool(body.get("auto_scale_mode", False)),
+        shaded=bool(body.get("shaded", False)),
         multipliers=body.get("multipliers", {}),
         history_range_seconds=int(body.get("history_range_seconds") or 0),
         created_at=now,
@@ -240,21 +241,40 @@ async def delete_chart_config(config_id: str, state: RuntimeState = Depends(get_
     return JSONResponse({"ok": True})
 
 
+EMBED_SCHEMES = ("dark", "light", "medium", "solarized-light", "solarized-dark", "system")
+EMBED_LOOKS = ("studio", "mono", "contrast")
+
+
+def parse_embed_spec(spec: str) -> dict:
+    """Appearance of an embedded view from its URL spec, e.g. "light+contrast+shaded".
+
+    Parameters are joined by "+", in any order and case; unknown ones are
+    ignored. Defaults: scheme "dark", look "studio", not shaded.
+    """
+    result = {"scheme": "dark", "look": "studio", "shaded": False}
+    for token in (spec or "").lower().replace(" ", "+").split("+"):
+        if token in EMBED_SCHEMES:
+            result["scheme"] = token
+        elif token in EMBED_LOOKS:
+            result["look"] = token
+        elif token == "shaded":
+            result["shaded"] = True
+    return result
+
+
 @router.get("/embed/{config_id}", response_class=HTMLResponse)
-@router.get("/embed/{config_id}/{theme}", response_class=HTMLResponse)
+@router.get("/embed/{config_id}/{spec}", response_class=HTMLResponse)
 async def chart_embed(config_id: str, request: Request,
                       state: RuntimeState = Depends(get_state),
-                      theme: str = "dark"):
+                      spec: str = ""):
     cfg = next((c for c in state.config.saved_charts.configs if c.id == config_id), None)
     if cfg is None:
         return HTMLResponse("Chart view not found", status_code=404)
-    if theme not in {"dark", "dark_shaded", "light", "light_shaded"}:
-        theme = "dark"
     strip_prefixes = {s.id: s.name_strip_prefixes for s in state.config.servers.servers}
     return templates.TemplateResponse(request, "chart_embed.html", {
         "request": request,
         "cfg": cfg,
-        "theme": theme,
+        "appearance": parse_embed_spec(spec),
         "strip_prefixes": strip_prefixes,
     })
 
