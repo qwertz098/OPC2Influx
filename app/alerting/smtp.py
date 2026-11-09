@@ -9,7 +9,6 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -83,6 +82,7 @@ class AlertManager:
         msg["To"] = ", ".join(cfg.to_addresses)
         msg.attach(MIMEText(body, "plain"))
 
+        import aiosmtplib   # ~14 MB, loaded on the first alert mail
         await aiosmtplib.send(
             msg,
             hostname=cfg.host,
