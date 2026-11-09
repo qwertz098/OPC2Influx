@@ -34,3 +34,28 @@ async def test_history_page_and_data_without_influx_target(async_client):
     assert resp.status_code == 400
     bad = await async_client.post("/chart/history/data", json={"signals": [], "from": 5, "to": 2})
     assert bad.status_code == 400
+
+
+def test_parse_embed_spec_defaults_order_and_unknown_tokens():
+    from app.routers.chart import parse_embed_spec
+
+    assert parse_embed_spec("") == {"scheme": "dark", "look": "studio", "shaded": False}
+    assert parse_embed_spec("SHADED+contrast+light") == {"scheme": "light", "look": "contrast", "shaded": True}
+    assert parse_embed_spec("dark_shaded+bogus") == {"scheme": "dark", "look": "studio", "shaded": False}
+
+
+@pytest.mark.asyncio
+async def test_embed_page_applies_spec(async_client):
+    import app.main as main_mod
+    from app.config import SavedChartConfig
+
+    cfg = SavedChartConfig(name="View", signals=[], shaded=True)
+    main_mod.app.state.runtime.config.saved_charts.configs.append(cfg)
+    plain = await async_client.get(f"/chart/embed/{cfg.id}")
+    assert 'data-theme="dark"' in plain.text and 'data-look="studio"' in plain.text
+    assert "const SHADED = false" in plain.text  # the view's own setting does not apply
+    styled = await async_client.get(f"/chart/embed/{cfg.id}/solarized-light+mono+shaded")
+    assert 'data-theme="solarized-light"' in styled.text and 'data-look="mono"' in styled.text
+    assert "const SHADED = true" in styled.text
+    missing = await async_client.get("/chart/embed/nope/light")
+    assert missing.status_code == 404

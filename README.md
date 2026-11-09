@@ -226,18 +226,19 @@ Any saved view can be embedded in an external page (dashboard, HMI, wiki) via an
 
 The embed auto-starts polling on load, shows a live legend with current values and multipliers, and the view name with a timestamp in the footer bar.
 
-#### Themes
+#### Appearance
 
-Append a theme name to the URL to control the visual style:
+Append parameters joined by `+` to choose the appearance; order and case do not matter, unknown parameters are ignored:
 
-| URL suffix | Description |
-|---|---|
-| `/dark` (default) | Dark background, line chart |
-| `/dark_shaded` | Dark background, filled area under lines |
-| `/light` | White background, dark axes |
-| `/light_shaded` | White background, filled area under lines |
+| Parameter | Values | Default |
+|---|---|---|
+| Colour scheme | `dark`, `light`, `medium`, `solarized-light`, `solarized-dark`, `system` (follows the viewing device) | `dark` |
+| Look | `studio`, `mono`, `contrast` | `studio` |
+| Area fill | `shaded` | off |
 
-Example: `/chart/embed/{id}/light_shaded`
+Examples: `/chart/embed/{id}` (dark, studio), `/chart/embed/{id}/light+shaded`, `/chart/embed/{id}/solarized-dark+contrast+shaded`.
+
+The colours are the same as the app's themes (Settings › Appearance); the embed does not depend on the viewer's app settings.
 
 ### Persistence
 

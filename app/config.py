@@ -398,7 +398,7 @@ class SavedChartConfig(BaseModel):
     max_time_seconds: int = 3600
     log_time_mode: bool = False
     auto_scale_mode: bool = False
-    fill_mode: bool = False         # fill the area under each line
+    shaded: bool = False            # fill the area under each line
     multipliers: dict[str, float] = {}
     history_range_seconds: int = 0  # History tab: relative range ("last N s"), 0 = none
     created_at: str = ""
