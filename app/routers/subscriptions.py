@@ -8,8 +8,6 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from openpyxl import Workbook
-from openpyxl.styles import Font
 
 from app.config import save_subscriptions, SubTagActivation, SubscriptionConfig, apply_name_strips
 from app.dependencies import get_state
@@ -59,6 +57,9 @@ async def list_subscriptions(request: Request, state: RuntimeState = Depends(get
 @router.get("/export")
 async def export_subscriptions(state: RuntimeState = Depends(get_state)):
     """Export the full subscription list as an .xlsx file."""
+    # openpyxl (~16 MB) is loaded on first export, not at startup
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
     subs = state.config.subscriptions.subscriptions
     server_map = {s.id: s.display_name for s in state.config.servers.servers}
     folder_map = {f.id: f for f in state.config.dynamic_folders.folders}

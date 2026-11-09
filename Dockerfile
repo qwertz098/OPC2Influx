@@ -18,7 +18,8 @@ WORKDIR /app
 COPY requirements.txt .
 # Bind-mount the wheels instead of copying them, so they add no image layer
 RUN --mount=type=bind,from=builder,source=/wheels,target=/wheels \
-    pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt
+    pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt \
+    && pip uninstall -y pip
 
 COPY app/ ./app/
 COPY templates/ ./templates/
@@ -34,11 +35,14 @@ RUN mkdir -p /config /data
 
 EXPOSE 8000
 
+# MALLOC_ARENA_MAX: glibc otherwise keeps a malloc arena per thread, which costs
+# RAM on small devices for no gain here
 ENV APP_CONFIG_DIR=/config \
     APP_DATA_DIR=/data \
     APP_HOST=0.0.0.0 \
     APP_PORT=8000 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    MALLOC_ARENA_MAX=2
 
 VOLUME ["/config", "/data"]
 
@@ -46,4 +50,5 @@ VOLUME ["/config", "/data"]
 ARG APP_RELEASE=dev
 ENV APP_RELEASE=${APP_RELEASE}
 
-CMD ["sh", "-c", "uvicorn app.main:app --host ${APP_HOST} --port ${APP_PORT}"]
+# exec: uvicorn replaces the shell and receives the stop signal itself
+CMD ["sh", "-c", "exec uvicorn app.main:app --host ${APP_HOST} --port ${APP_PORT}"]
