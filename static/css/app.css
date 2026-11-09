@@ -356,7 +356,8 @@ tr[id^="edit-"]:empty { display: none; }
 .chips { display: inline-flex; gap: 4px; }
 .chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: inherit; }
 .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.hist-info { cursor: help; margin-left: .25rem; }
+.icon-seg .seg-btn { display: inline-flex; align-items: center; padding: 4px 8px; color: var(--muted); }
+.icon-seg .seg-btn:hover { background: var(--bg); color: var(--accent); }
 .hist-range-bar { display: flex; gap: .5rem; align-items: center; justify-content: center; padding: 4px 12px 8px; }
 .hist-legend-row { display: flex; align-items: center; gap: .5rem; padding: 3px 0; border-bottom: 1px solid var(--border); font-size: .82rem; }
 .hist-legend-row:last-child { border-bottom: none; }
@@ -364,3 +365,7 @@ tr[id^="edit-"]:empty { display: none; }
 .hist-legend-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist-legend-range { font-size: .75rem; white-space: nowrap; }
 .hist-legend-val { font-weight: 600; min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Blue (i) with the explanation in its tooltip */
+.info-icon { display: inline-flex; align-items: center; color: var(--accent); cursor: help; }
+.info-icon:hover { color: var(--accent-h); }

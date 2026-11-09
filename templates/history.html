@@ -135,13 +135,16 @@
       </div>
     </div>
     <div class="hist-range-bar">
-      <button type="button" class="btn btn-ghost btn-xs" onclick="shiftRange(-0.5)" title="Move the whole range back by half its length">◀</button>
+      <div class="seg icon-seg">
+        <button type="button" class="seg-btn" onclick="shiftRange(-0.5)" title="Move the whole range back by half its length" aria-label="Range back"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
+        <button type="button" class="seg-btn" onclick="shiftRange(0.5)" title="Move the whole range forward by half its length" aria-label="Range forward"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
+      </div>
       <span id="rangeLabel" class="text-sm text-muted"></span>
-      <button type="button" class="btn btn-ghost btn-xs" onclick="shiftRange(0.5)" title="Move the whole range forward by half its length">▶</button>
-      <span class="hist-sep"></span>
-      <button type="button" class="btn btn-ghost btn-xs" onclick="stretchRange(2)" title="Stretch the whole range to twice its length">－ wider</button>
-      <button type="button" class="btn btn-ghost btn-xs" onclick="stretchRange(0.5)" title="Shrink the whole range to half its length">＋ narrower</button>
-      <span class="text-sm text-muted hist-info" title="Mouse wheel: zoom&#10;Drag: pan&#10;Shift + drag: zoom to box&#10;Overview handles: pick the window&#10;Double-click: whole range&#10;◀ ▶ / wider / narrower: move or stretch the whole range">(i)</span>
+      <div class="seg icon-seg">
+        <button type="button" class="seg-btn" onclick="stretchRange(2)" title="Widen the whole range to twice its length" aria-label="Widen range"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14M5 7h4"/></svg></button>
+        <button type="button" class="seg-btn" onclick="stretchRange(0.5)" title="Narrow the whole range to half its length" aria-label="Narrow range"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14M5 7h4M7 5v4"/></svg></button>
+      </div>
+      <span class="info-icon" title="Mouse wheel: zoom&#10;Drag: pan&#10;Shift + drag: zoom to box&#10;Overview handles: pick the window&#10;Double-click: whole range&#10;Arrows: move the whole range by half its length&#10;Magnifiers: widen or narrow the whole range"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
     </div>
     <div id="chart-legend" style="padding:.5rem 1rem;border-top:1px solid var(--border);display:none"></div>
   </div>
