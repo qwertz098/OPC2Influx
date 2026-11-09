@@ -42,6 +42,48 @@
   </div>
 </div>
 
+<!-- Appearance (stored in this browser, not in the config) -->
+<div class="card mb-4">
+  <div class="card-body">
+    <h2 class="section-title">Appearance</h2>
+    <div class="form-row">
+      <div class="form-group" style="max-width:220px">
+        <label class="form-label" for="lookSel">Look</label>
+        <select class="select" id="lookSel">
+          <option value="studio">Studio</option>
+          <option value="mono">Monochrome</option>
+          <option value="contrast">Contrast (sunlight)</option>
+        </select>
+      </div>
+      <div class="form-group" style="max-width:220px">
+        <label class="form-label" for="themeSel">Colour scheme</label>
+        <select class="select" id="themeSel">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="medium">Medium</option>
+          <option value="dark">Dark</option>
+          <option value="solarized-light">Solarized light</option>
+          <option value="solarized-dark">Solarized dark</option>
+        </select>
+      </div>
+    </div>
+    <p class="text-xs text-muted">
+      Applies immediately and is stored in this browser only, so each screen can have its own
+      (e.g. dark in the control room, light in the office). "System" follows the operating system.
+    </p>
+  </div>
+</div>
+<script>
+(function () {
+  const look = document.getElementById('lookSel'), theme = document.getElementById('themeSel');
+  const p = window.o2iTheme.prefs();
+  look.value = p.look;
+  theme.value = p.theme;
+  look.addEventListener('change', () => window.o2iTheme.set(look.value, null));
+  theme.addEventListener('change', () => window.o2iTheme.set(null, theme.value));
+})();
+</script>
+
 <!-- Dynamic Folder Auto-Subscribe -->
 <div class="card mb-4">
   <div class="card-body">

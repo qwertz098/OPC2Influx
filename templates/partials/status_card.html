@@ -117,8 +117,8 @@
   {% endif %}
 {% endfor %}
 {% if all_conflicts %}
-<div class="card mt-4" style="border-left:3px solid #b45309">
-  <div class="card-header" style="color:#b45309">Error Log — InfluxDB Field Type Conflicts</div>
+<div class="card mt-4" style="border-left:3px solid var(--warn)">
+  <div class="card-header" style="color:var(--warn)">Error Log — InfluxDB Field Type Conflicts</div>
   <div class="card-body" style="padding:0">
     <table class="table">
       <thead>
@@ -140,7 +140,7 @@
         <tr>
           <td class="text-sm">{{ target_name }}</td>
           <td class="mono text-sm">{{ mf }}</td>
-          <td class="mono text-sm" style="color:#b45309">{{ got }}</td>
+          <td class="mono text-sm" style="color:var(--warn)">{{ got }}</td>
           <td class="mono text-sm">{{ stored }}</td>
           <td>
             <form action="/config/influxdb/{{ target_id }}/clear-conflict" method="post" style="display:inline">

@@ -329,7 +329,7 @@ function tooltipFormatter(params) {
     const row = (mainData.get(key) || [])[p.dataIndex];
     if (!row) continue;
     html += `<br><span style="color:${p.color}">●</span> ${p.seriesName}: <b>${fmtVal(row[1])}</b>` +
-            ` <span style="color:#94a3b8">(${fmtVal(row[2])} – ${fmtVal(row[3])})</span>`;
+            ` <span style="color:${chartColors().muted}">(${fmtVal(row[2])} – ${fmtVal(row[3])})</span>`;
   }
   return html;
 }
@@ -342,26 +342,28 @@ function renderChart() {
     return;
   }
   const c = getOrInitChart();
+  const k = chartColors();
   c.setOption({
     animation: false,
     grid: [{left: 60, right: 24, top: 20, bottom: 130}, {left: 60, right: 24, height: 60, bottom: 34}],
     xAxis: [
-      {type: 'time', gridIndex: 0, min: range[0], max: range[1]},
-      {type: 'time', gridIndex: 1, min: range[0], max: range[1],
-       axisLabel: {fontSize: 10, color: '#94a3b8'}, splitLine: {show: false}},
+      themedAxis(k, {type: 'time', gridIndex: 0, min: range[0], max: range[1]}),
+      themedAxis(k, {type: 'time', gridIndex: 1, min: range[0], max: range[1],
+       axisLabel: {fontSize: 10}, splitLine: {show: false}}),
     ],
     yAxis: [
-      {type: 'value', gridIndex: 0, scale: autoScaleMode, axisLine: {show: true}},
-      {type: 'value', gridIndex: 1, scale: true, axisLabel: {show: false}, splitLine: {show: false}},
+      themedAxis(k, {type: 'value', gridIndex: 0, scale: autoScaleMode, axisLine: {show: true}}),
+      themedAxis(k, {type: 'value', gridIndex: 1, scale: true, axisLabel: {show: false}, splitLine: {show: false}}),
     ],
     dataZoom: [
       {id: 'inside', type: 'inside', xAxisIndex: 0, filterMode: 'none',
        startValue: win[0], endValue: win[1], moveOnMouseMove: true},
       {id: 'slider', type: 'slider', xAxisIndex: 0, filterMode: 'none', startValue: win[0], endValue: win[1],
        height: 60, bottom: 34, left: 60, right: 24, showDataShadow: false, backgroundColor: 'rgba(0,0,0,0)',
-       fillerColor: 'rgba(37,99,235,0.12)', borderColor: '#cbd5e1', labelFormatter: v => fmtTime(v)},
+       fillerColor: hexAlpha(k.accent, 0.12), borderColor: k.line, handleStyle: {color: k.surface, borderColor: k.frame}, moveHandleStyle: {color: k.line},
+       textStyle: {color: k.muted}, labelFormatter: v => fmtTime(v)},
     ],
-    tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}, formatter: tooltipFormatter},
+    tooltip: themedTooltip(k, {trigger: 'axis', axisPointer: {type: 'cross'}, formatter: tooltipFormatter}),
     legend: {show: false},
     series: mainSeries().concat(overviewSeries()),
   }, true);
@@ -396,7 +398,7 @@ function setupBoxZoom() {
     const g = chart.getModel().getComponent('grid', 0).coordinateSystem.getRect();
     chart.setOption({graphic: [{id: 'box', type: 'rect', silent: true,
       shape: {x: Math.min(startX, e.offsetX), y: g.y, width: Math.abs(e.offsetX - startX), height: g.height},
-      style: {fill: 'rgba(37,99,235,0.10)', stroke: 'rgba(37,99,235,0.6)'}}]});
+      style: {fill: hexAlpha(chartColors().accent, 0.10), stroke: hexAlpha(chartColors().accent, 0.6)}}]});
   });
   zr.on('mouseup', e => {
     if (startX === null) return;
@@ -766,6 +768,7 @@ document.querySelectorAll('#modeSeg .seg-btn').forEach(b => b.addEventListener('
 document.querySelectorAll('#quickChips .chip').forEach(c => c.addEventListener('click', () => applyPreset(+c.dataset.s)));
 document.getElementById('followChk').addEventListener('change', e => e.target.checked ? startFollow() : (stopFollow(), saveState()));
 window.addEventListener('beforeunload', saveState);
+window.addEventListener('themechange', () => { if (chart && range) renderChart(); });
 
 const _now = Date.now();
 document.getElementById('fromInp').value = toLocalInput(_now - 6 * 36e5);

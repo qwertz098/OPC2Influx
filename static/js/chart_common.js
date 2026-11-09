@@ -58,3 +58,31 @@ function filterSubList() {
   const empty = document.getElementById('subFilterEmpty');
   if (empty) empty.style.display = visibleCount === 0 ? '' : 'none';
 }
+
+// Colours of the active theme for ECharts, which draws on a canvas and cannot
+// read CSS variables itself. Charts re-render on the 'themechange' event.
+function chartColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = name => cs.getPropertyValue(name).trim();
+  return {fg: v('--fg'), muted: v('--muted'), line: v('--line'), grid: v('--grid'),
+          frame: v('--frame'), surface: v('--panel-raised'), accent: v('--accent')};
+}
+
+function themedAxis(c, axis) {
+  return {
+    ...axis,
+    axisLine: {...(axis.axisLine || {}), lineStyle: {color: c.frame}},
+    axisTick: {lineStyle: {color: c.frame}},
+    axisLabel: {color: c.muted, ...(axis.axisLabel || {})},
+    splitLine: {...{lineStyle: {color: c.grid}}, ...(axis.splitLine || {})},
+  };
+}
+
+function themedTooltip(c, tooltip) {
+  return {backgroundColor: c.surface, borderColor: c.line, textStyle: {color: c.fg}, ...tooltip};
+}
+
+function hexAlpha(hex, a) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}

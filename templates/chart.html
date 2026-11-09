@@ -323,6 +323,8 @@ document.getElementById('intervalSel').addEventListener('change', () => {
 });
 
 // ─── Keep polling alive when tab is shown again ───────────────────────────────
+window.addEventListener('themechange', () => { chartInitialized = false; renderChart(); });
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && running && !paused) {
     clearInterval(pollingTimer);
@@ -466,17 +468,18 @@ function initChart() {
     type: 'time',
   };
 
+  const colors = chartColors();
   c.setOption({
     animation: false,
     grid: {left: 60, right: 20, top: 40, bottom: 40},
-    tooltip: {
+    tooltip: themedTooltip(colors, {
       trigger: 'axis',
       axisPointer: {type: 'cross'},
       formatter: tooltipFormatter,
-    },
+    }),
     legend: {show: false},
-    xAxis,
-    yAxis: {type: 'value', axisLine: {show: true}, scale: autoScaleMode},
+    xAxis: themedAxis(colors, xAxis),
+    yAxis: themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode}),
     series: buildSeries(),
   }, true);   // notMerge=true: full reset (only on structural changes)
 
