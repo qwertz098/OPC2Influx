@@ -1,0 +1,774 @@
+{% extends "base.html" %}
+{% block title %}History{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom:.5rem">
+  <h1>History</h1>
+</div>
+
+<!-- Toolbar -->
+<div class="card mb-3">
+  <div class="card-body" style="padding:.6rem 1rem">
+    <div class="hist-toolbar">
+      <div class="seg" id="modeSeg">
+        <button type="button" class="seg-btn" data-mode="last">Last</button>
+        <button type="button" class="seg-btn" data-mode="fromto">From – To</button>
+        <button type="button" class="seg-btn" data-mode="startdur">Start + Duration</button>
+      </div>
+
+      <div class="hist-pane" data-pane="last">
+        <div class="chips" id="quickChips">
+          <button type="button" class="chip" data-s="900">15 min</button>
+          <button type="button" class="chip" data-s="3600">1 h</button>
+          <button type="button" class="chip" data-s="21600">6 h</button>
+          <button type="button" class="chip" data-s="86400">24 h</button>
+          <button type="button" class="chip" data-s="604800">7 d</button>
+          <button type="button" class="chip" data-s="2592000">30 d</button>
+        </div>
+        <label class="checkbox-label text-sm" title="Reload every 10 s; the end of the range follows 'now'">
+          <input type="checkbox" id="followChk"> Follow
+        </label>
+      </div>
+
+      <div class="hist-pane" data-pane="fromto" hidden>
+        <input type="datetime-local" class="input input-sm" id="fromInp" style="width:auto">
+        <span class="text-muted">–</span>
+        <input type="datetime-local" class="input input-sm" id="toInp" style="width:auto">
+        <button type="button" class="btn btn-primary btn-sm" onclick="applyFromTo()">Load</button>
+      </div>
+
+      <div class="hist-pane" data-pane="startdur" hidden>
+        <input type="datetime-local" class="input input-sm" id="startInp" style="width:auto">
+        <span class="text-muted text-sm">for</span>
+        <select class="input input-sm" id="durSel" style="width:auto;padding:.15rem .4rem">
+          <option value="900">15 min</option>
+          <option value="3600">1 h</option>
+          <option value="7200" selected>2 h</option>
+          <option value="28800">8 h</option>
+          <option value="86400">24 h</option>
+          <option value="604800">7 d</option>
+        </select>
+        <button type="button" class="btn btn-primary btn-sm" onclick="applyStartDuration()">Load</button>
+      </div>
+
+      <span class="hist-sep"></span>
+      <label class="text-sm text-muted" style="display:{{ 'flex' if influx_targets | length > 1 else 'none' }};align-items:center;gap:.35rem">
+        Source:
+        <select id="targetSel" class="input input-sm" style="width:auto;padding:.15rem .4rem" onchange="loadAll()">
+          {% for t in influx_targets %}<option value="{{ t.id }}">{{ t.display_name }}</option>{% endfor %}
+        </select>
+      </label>
+      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
+              title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
+      <span style="margin-left:auto"></span>
+      <button class="btn btn-ghost btn-sm" onclick="saveView()" title="Save signals, multipliers and range length as a named view">Save view</button>
+      <div style="display:flex;align-items:center;gap:.3rem">
+        <select id="loadViewSel" class="input input-sm" style="width:auto;padding:.15rem .4rem;max-width:160px" onchange="_onViewSelChange()">
+          <option value="">Select…</option>
+        </select>
+        <button id="loadViewBtn"   class="btn btn-ghost btn-sm" onclick="loadSelectedView()"   title="Load selected view" disabled>Load</button>
+        <button id="deleteViewBtn" class="btn btn-ghost btn-sm" onclick="deleteSelectedView()" title="Delete selected view" style="color:var(--red,#ef4444)" disabled>✕</button>
+      </div>
+    </div>
+    <div class="hist-status" id="statusMsg"></div>
+  </div>
+</div>
+
+{% if not influx_targets %}
+<div class="card mb-3"><div class="card-body text-sm">
+  History reads from InfluxDB, but no InfluxDB target is enabled. <a href="/config/influxdb">Configure InfluxDB →</a>
+</div></div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:300px 1fr;gap:1rem;align-items:start">
+
+  <!-- Left: subscribed signals (only those are written to InfluxDB) -->
+  <div class="card" style="max-height:calc(100vh - 210px);display:flex;flex-direction:column;min-width:0">
+    <div class="card-header" style="font-size:.85rem;padding:.5rem .75rem">From Subscriptions</div>
+    {% if subscriptions %}
+    <div style="padding:.4rem .6rem;border-bottom:1px solid var(--border);display:flex;gap:.4rem">
+      <input type="text" id="subFilterInput" class="input input-sm" placeholder="Filter…"
+             style="flex:1;min-width:0" oninput="filterSubList()">
+      <select id="subServerFilter" class="input input-sm" style="width:auto;flex-shrink:0" onchange="filterSubList()">
+        <option value="">All servers</option>
+        {% for srv in servers %}
+        <option value="{{ srv.id }}">{{ srv.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="card-body p-0" style="overflow-y:auto;flex:1">
+      <ul class="node-tree" id="subList" style="padding:4px 0;min-width:max-content">
+        {% for sub in subscriptions %}
+        {% set stripped = stripped_measurements.get(sub.id, sub.influxdb.measurement) %}
+        <li class="node node--variable sub-list-item"
+            data-server-id="{{ sub.server_id | e }}"
+            data-search="{{ (server_names.get(sub.server_id, sub.server_id) ~ ' ' ~ stripped ~ ' ' ~ (sub.display_name or sub.node_id)) | lower }}">
+          <div class="node-header">
+            <input type="checkbox"
+                   class="node-checkbox chart-var-checkbox"
+                   onchange="chartVarToggle(this)"
+                   data-server="{{ sub.server_id | e }}"
+                   data-node="{{ sub.node_id | e }}"
+                   data-path="{{ sub.browse_path | e }}"
+                   data-name="{{ sub.display_name | e }}"
+                   data-label="{{ sub.influxdb.measurement | e }}">
+            <span class="node-name" title="{{ sub.influxdb.measurement }}">{{ stripped }}</span>
+            <span class="text-muted text-xs" style="margin-left:auto;padding-left:.5rem">{{ server_names.get(sub.server_id, sub.server_id) }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      <p id="subFilterEmpty" class="text-muted text-sm p-2" style="display:none">No matches.</p>
+    </div>
+    {% else %}
+    <p class="p-3 text-muted text-sm">History is available for subscribed signals. <a href="/subscriptions">Subscriptions →</a></p>
+    {% endif %}
+  </div>
+
+  <!-- Right: chart, overview, legend -->
+  <div class="card">
+    <div id="chart-area" style="width:100%;height:calc(100vh - 330px);min-height:420px">
+      <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
+           height:100%;color:var(--text-muted);font-size:.9rem">
+        Select signals on the left and pick a range.
+      </div>
+    </div>
+    <div class="hist-range-bar">
+      <button type="button" class="btn btn-ghost btn-xs" onclick="shiftRange(-0.5)" title="Move the whole range back by half its length">◀</button>
+      <span id="rangeLabel" class="text-sm text-muted"></span>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="shiftRange(0.5)" title="Move the whole range forward by half its length">▶</button>
+      <span class="hist-sep"></span>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="stretchRange(2)" title="Stretch the whole range to twice its length">－ wider</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="stretchRange(0.5)" title="Shrink the whole range to half its length">＋ narrower</button>
+      <span class="text-sm text-muted hist-info" title="Mouse wheel: zoom&#10;Drag: pan&#10;Shift + drag: zoom to box&#10;Overview handles: pick the window&#10;Double-click: whole range&#10;◀ ▶ / wider / narrower: move or stretch the whole range">(i)</span>
+    </div>
+    <div id="chart-legend" style="padding:.5rem 1rem;border-top:1px solid var(--border);display:none"></div>
+  </div>
+
+</div>
+
+<script src="/static/vendor/echarts@5.min.js"></script>
+<script>
+const STRIP_PREFIXES = {{ strip_prefixes | tojson }};
+</script>
+<script src="/static/js/chart_common.js?v={{ app_version }}"></script>
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+const OVERVIEW_POINTS = 300;
+const FOLLOW_MS = 10000;
+const SS_KEY = 'history_state';
+
+let selectedSignals = new Map(); // key → {server_id, node_id, path, name, color, label, raw}
+let multipliers     = new Map(); // key → float
+let autoScaleMode   = false;
+let mode      = 'last';          // last | fromto | startdur
+let presetSec = 86400;           // active quick range (mode "last"), 0 = custom
+let range     = null;            // [from, to] ms — the whole range (overview)
+let win       = null;            // [from, to] ms — visible window (main chart)
+let overview  = new Map();       // key → [[t, mean, min, max], …] over range, coarse
+let detail    = new Map();       // key → same over win, ~1 point per pixel
+let mainData  = new Map();       // key → overview outside win + detail inside
+let followTimer = null;
+let loadSeq   = 0;               // drops responses of superseded requests
+let zoomTimer = null;
+let chart     = null;
+
+// ─── Small helpers ───────────────────────────────────────────────────────────
+const fmtTime = t => new Date(t).toLocaleString([], {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'});
+function fmtDur(ms) {
+  if (ms >= 864e5) return +(ms / 864e5).toFixed(1) + ' d';
+  if (ms >= 36e5)  return +(ms / 36e5).toFixed(1) + ' h';
+  if (ms >= 6e4)   return Math.round(ms / 6e4) + ' min';
+  return Math.max(1, Math.round(ms / 1e3)) + ' s';
+}
+function toLocalInput(t) {
+  const d = new Date(t - new Date().getTimezoneOffset() * 6e4);
+  return d.toISOString().slice(0, 16);
+}
+function setStatus(msg) { document.getElementById('statusMsg').textContent = msg; }
+
+// ─── Data ────────────────────────────────────────────────────────────────────
+async function fetchHistory(from, to, points) {
+  const resp = await fetch('/chart/history/data', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      signals: Array.from(selectedSignals.values()).map(s => ({server_id: s.server_id, node_id: s.node_id})),
+      from: Math.round(from), to: Math.round(to), points,
+      target_id: document.getElementById('targetSel')?.value || null,
+    }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || resp.statusText);
+  const out = new Map();
+  for (const s of data.signals) out.set(sigKey(s.server_id, s.node_id), s.points);
+  return {points: out, bucket: data.bucket_seconds, target: data.target, error: data.error};
+}
+
+function windowPoints() {
+  const w = chart ? chart.getWidth() - 100 : 1000;
+  return Math.max(200, Math.min(5000, Math.round(w)));
+}
+
+function mergeData() {
+  mainData = new Map();
+  for (const key of selectedSignals.keys()) {
+    const coarse = (overview.get(key) || []).filter(p => p[0] < win[0] || p[0] > win[1]);
+    mainData.set(key, coarse.concat(detail.get(key) || []).sort((a, b) => a[0] - b[0]));
+  }
+}
+
+function statusText(bucketS, target, error) {
+  const missing = Array.from(selectedSignals.keys()).filter(k => !(detail.get(k) || []).length);
+  let msg = `Window ${fmtTime(win[0])} – ${fmtTime(win[1])} (${fmtDur(win[1] - win[0])}) · ` +
+            `1 point = ${fmtDur(bucketS * 1000)} · mean with min/max band · InfluxDB ${target}`;
+  if (missing.length) msg += ` · no data: ${missing.map(k => sigLabel(selectedSignals.get(k))).join(', ')}`;
+  if (followTimer) msg += ' · following';
+  if (error) msg += ` · query error: ${error}`;
+  return msg;
+}
+
+// Overview of the whole range + detail of the window, then a full redraw
+async function loadAll() {
+  saveState();
+  updateRangeLabel();
+  if (!range || !selectedSignals.size) { renderChart(); return; }
+  const seq = ++loadSeq;
+  setStatus('Loading …');
+  try {
+    const [ov, dt] = await Promise.all([
+      fetchHistory(range[0], range[1], OVERVIEW_POINTS),
+      fetchHistory(win[0], win[1], windowPoints()),
+    ]);
+    if (seq !== loadSeq) return;
+    overview = ov.points;
+    detail = dt.points;
+    mergeData();
+    renderChart();
+    setStatus(statusText(dt.bucket, dt.target, dt.error || ov.error));
+  } catch (e) {
+    if (seq === loadSeq) setStatus('Load failed: ' + e.message);
+  }
+}
+
+// Only the visible window, in full resolution (after zoom / pan)
+async function loadWindow() {
+  saveState();
+  if (!range || !selectedSignals.size) return;
+  const seq = ++loadSeq;
+  setStatus('Loading window …');
+  try {
+    const dt = await fetchHistory(win[0], win[1], windowPoints());
+    if (seq !== loadSeq) return;
+    detail = dt.points;
+    mergeData();
+    chart.setOption({series: mainSeries()});
+    updateLegendValues();
+    setStatus(statusText(dt.bucket, dt.target, dt.error));
+  } catch (e) {
+    if (seq === loadSeq) setStatus('Load failed: ' + e.message);
+  }
+}
+
+// ─── Chart ───────────────────────────────────────────────────────────────────
+function getOrInitChart() {
+  if (!chart) {
+    chart = echarts.init(document.getElementById('chart-area'));
+    window.addEventListener('resize', () => chart.resize());
+    chart.on('datazoom', onDataZoom);
+    chart.getZr().on('dblclick', () => {
+      if (!range) return;
+      chart.dispatchAction({type: 'dataZoom', dataZoomIndex: 0, start: 0, end: 100});
+    });
+    setupBoxZoom();
+  }
+  return chart;
+}
+
+function mainSeries() {
+  const series = [];
+  for (const [key, sig] of selectedSignals) {
+    const m = multipliers.get(key) || 1.0;
+    const d = mainData.get(key) || [];
+    series.push({id: 'lo|' + key, type: 'line', xAxisIndex: 0, yAxisIndex: 0, stack: 'band|' + key,
+      symbol: 'none', silent: true, lineStyle: {opacity: 0}, tooltip: {show: false},
+      data: d.map(p => [p[0], p[2] * m])});
+    series.push({id: 'hi|' + key, type: 'line', xAxisIndex: 0, yAxisIndex: 0, stack: 'band|' + key,
+      symbol: 'none', silent: true, lineStyle: {opacity: 0}, tooltip: {show: false},
+      areaStyle: {color: sig.color, opacity: 0.16},
+      data: d.map(p => [p[0], (p[3] - p[2]) * m])});
+    series.push({id: 'mean|' + key, name: sigLabel(sig), type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+      symbol: 'none', lineStyle: {color: sig.color, width: 1.5}, itemStyle: {color: sig.color},
+      data: d.map(p => [p[0], p[1] * m])});
+  }
+  return series;
+}
+
+function overviewSeries() {
+  const series = [];
+  for (const [key, sig] of selectedSignals) {
+    const m = multipliers.get(key) || 1.0;
+    series.push({id: 'nav|' + key, type: 'line', xAxisIndex: 1, yAxisIndex: 1, symbol: 'none', silent: true,
+      lineStyle: {color: sig.color, width: 1, opacity: 0.8}, tooltip: {show: false},
+      data: (overview.get(key) || []).map(p => [p[0], p[1] * m])});
+  }
+  return series;
+}
+
+function tooltipFormatter(params) {
+  const means = params.filter(p => String(p.seriesId).startsWith('mean|'));
+  if (!means.length) return '';
+  let html = fmtTime(means[0].value[0]);
+  for (const p of means) {
+    const key = String(p.seriesId).slice(5);
+    const row = (mainData.get(key) || [])[p.dataIndex];
+    if (!row) continue;
+    html += `<br><span style="color:${p.color}">●</span> ${p.seriesName}: <b>${fmtVal(row[1])}</b>` +
+            ` <span style="color:#94a3b8">(${fmtVal(row[2])} – ${fmtVal(row[3])})</span>`;
+  }
+  return html;
+}
+
+function renderChart() {
+  updatePlaceholder();
+  if (!selectedSignals.size || !range) {
+    if (chart) chart.setOption({series: []}, true);
+    renderLegend();
+    return;
+  }
+  const c = getOrInitChart();
+  c.setOption({
+    animation: false,
+    grid: [{left: 60, right: 24, top: 20, bottom: 130}, {left: 60, right: 24, height: 60, bottom: 34}],
+    xAxis: [
+      {type: 'time', gridIndex: 0, min: range[0], max: range[1]},
+      {type: 'time', gridIndex: 1, min: range[0], max: range[1],
+       axisLabel: {fontSize: 10, color: '#94a3b8'}, splitLine: {show: false}},
+    ],
+    yAxis: [
+      {type: 'value', gridIndex: 0, scale: autoScaleMode, axisLine: {show: true}},
+      {type: 'value', gridIndex: 1, scale: true, axisLabel: {show: false}, splitLine: {show: false}},
+    ],
+    dataZoom: [
+      {id: 'inside', type: 'inside', xAxisIndex: 0, filterMode: 'none',
+       startValue: win[0], endValue: win[1], moveOnMouseMove: true},
+      {id: 'slider', type: 'slider', xAxisIndex: 0, filterMode: 'none', startValue: win[0], endValue: win[1],
+       height: 60, bottom: 34, left: 60, right: 24, showDataShadow: false, backgroundColor: 'rgba(0,0,0,0)',
+       fillerColor: 'rgba(37,99,235,0.12)', borderColor: '#cbd5e1', labelFormatter: v => fmtTime(v)},
+    ],
+    tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}, formatter: tooltipFormatter},
+    legend: {show: false},
+    series: mainSeries().concat(overviewSeries()),
+  }, true);
+  renderLegend();
+}
+
+// Zoom / pan / overview handles → reload the window in full resolution
+function onDataZoom() {
+  clearTimeout(zoomTimer);
+  zoomTimer = setTimeout(() => {
+    const ext = chart.getModel().getComponent('xAxis', 0).axis.scale.getExtent();
+    const next = [Math.max(range[0], ext[0]), Math.min(range[1], ext[1])];
+    if (Math.abs(next[0] - win[0]) < 1 && Math.abs(next[1] - win[1]) < 1) return;
+    win = next;
+    loadWindow();
+  }, 350);
+}
+
+// Shift + drag draws a box; the window becomes the box's time span
+function setupBoxZoom() {
+  const zr = chart.getZr();
+  let startX = null;
+  const setPan = on => chart.setOption({dataZoom: [{id: 'inside', moveOnMouseMove: on}]});
+  document.addEventListener('keydown', e => { if (e.key === 'Shift' && range) setPan(false); });
+  document.addEventListener('keyup', e => { if (e.key === 'Shift' && range) setPan(true); });
+  zr.on('mousedown', e => {
+    if (!e.event.shiftKey || !chart.containPixel({gridIndex: 0}, [e.offsetX, e.offsetY])) return;
+    startX = e.offsetX;
+  });
+  zr.on('mousemove', e => {
+    if (startX === null) return;
+    const g = chart.getModel().getComponent('grid', 0).coordinateSystem.getRect();
+    chart.setOption({graphic: [{id: 'box', type: 'rect', silent: true,
+      shape: {x: Math.min(startX, e.offsetX), y: g.y, width: Math.abs(e.offsetX - startX), height: g.height},
+      style: {fill: 'rgba(37,99,235,0.10)', stroke: 'rgba(37,99,235,0.6)'}}]});
+  });
+  zr.on('mouseup', e => {
+    if (startX === null) return;
+    const x0 = Math.min(startX, e.offsetX), x1 = Math.max(startX, e.offsetX);
+    startX = null;
+    chart.setOption({graphic: [{id: 'box', $action: 'remove'}]});
+    if (x1 - x0 < 5) return;
+    const t0 = chart.convertFromPixel({xAxisIndex: 0}, x0);
+    const t1 = chart.convertFromPixel({xAxisIndex: 0}, x1);
+    chart.dispatchAction({type: 'dataZoom', dataZoomIndex: 0, startValue: t0, endValue: t1});
+  });
+}
+
+// ─── Range selection ─────────────────────────────────────────────────────────
+function setRange(from, to, keepWindow = false) {
+  range = [from, to];
+  win = keepWindow && win
+    ? [Math.max(from, win[0]), Math.min(to, win[1])]
+    : [from, to];
+  if (win[1] - win[0] < 1000) win = [from, to];
+  document.getElementById('fromInp').value = toLocalInput(from);
+  document.getElementById('toInp').value = toLocalInput(to);
+  document.getElementById('startInp').value = toLocalInput(from);
+  loadAll();
+}
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#modeSeg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+  document.querySelectorAll('.hist-pane').forEach(p => { p.hidden = p.dataset.pane !== m; });
+  if (m !== 'last') stopFollow();
+}
+
+function markPreset(sec) {
+  presetSec = sec;
+  document.querySelectorAll('#quickChips .chip').forEach(c => c.classList.toggle('active', +c.dataset.s === sec));
+}
+
+function applyPreset(sec) {
+  setMode('last');
+  markPreset(sec);
+  const now = Date.now();
+  setRange(now - sec * 1000, now);
+}
+
+function applyFromTo() {
+  const a = new Date(document.getElementById('fromInp').value).getTime();
+  const b = new Date(document.getElementById('toInp').value).getTime();
+  if (!(a < b)) { setStatus('"From" must be before "To".'); return; }
+  markPreset(0);
+  setRange(a, b);
+}
+
+function applyStartDuration() {
+  const a = new Date(document.getElementById('startInp').value).getTime();
+  if (!a) { setStatus('Pick a start time.'); return; }
+  markPreset(0);
+  setRange(a, a + parseInt(document.getElementById('durSel').value) * 1000);
+}
+
+// Whole range: move by a fraction of its length, or stretch around its centre
+function customRange() { stopFollow(); markPreset(0); }
+function shiftRange(frac) {
+  if (!range) return;
+  customRange();
+  const d = (range[1] - range[0]) * frac;
+  win = [win[0] + d, win[1] + d];
+  setRange(range[0] + d, range[1] + d, true);
+}
+function stretchRange(factor) {
+  if (!range) return;
+  customRange();
+  const mid = (range[0] + range[1]) / 2, half = (range[1] - range[0]) * factor / 2;
+  if (half < 30e3) return;
+  setRange(mid - half, mid + half, true);
+}
+
+function updateRangeLabel() {
+  document.getElementById('rangeLabel').textContent =
+    range ? `Range ${fmtTime(range[0])} – ${fmtTime(range[1])} (${fmtDur(range[1] - range[0])})` : '';
+}
+
+// Follow: every 10 s the range ends at "now"; a window at the end moves along
+function stopFollow() {
+  clearInterval(followTimer);
+  followTimer = null;
+  document.getElementById('followChk').checked = false;
+}
+function startFollow() {
+  if (!presetSec) applyPreset(86400);
+  clearInterval(followTimer);
+  followTimer = setInterval(() => {
+    const now = Date.now(), d = now - range[1];
+    const atEnd = win[1] >= range[1] - 1000;
+    range = [now - presetSec * 1000, now];
+    win = atEnd ? [Math.max(range[0], win[0] + d), now] : [Math.max(range[0], win[0]), win[1]];
+    loadAll();
+  }, FOLLOW_MS);
+  saveState();
+}
+
+// ─── Signal selection ────────────────────────────────────────────────────────
+function chartVarToggle(el) {
+  const key = sigKey(el.dataset.server, el.dataset.node);
+  if (el.checked) {
+    const used = new Set(Array.from(selectedSignals.values()).map(s => s.color));
+    const color = COLORS.find(c => !used.has(c)) || COLORS[selectedSignals.size % COLORS.length];
+    selectedSignals.set(key, {server_id: el.dataset.server, node_id: el.dataset.node, path: el.dataset.path,
+      name: el.dataset.name, color, label: el.dataset.label, raw: true});
+    if (!multipliers.has(key)) multipliers.set(key, 1.0);
+  } else {
+    selectedSignals.delete(key);
+    multipliers.delete(key);
+  }
+  if (!range) applyPreset(presetSec || 86400); else loadAll();
+}
+
+function removeSignal(key) {
+  selectedSignals.delete(key);
+  multipliers.delete(key);
+  const [serverId, nodeId] = key.split('|');
+  document.querySelectorAll('.chart-var-checkbox').forEach(cb => {
+    if (cb.dataset.server === serverId && cb.dataset.node === nodeId) cb.checked = false;
+  });
+  loadAll();
+}
+
+function unselectAll() {
+  document.querySelectorAll('.chart-var-checkbox:checked').forEach(cb => { cb.checked = false; });
+  selectedSignals.clear();
+  multipliers.clear();
+  stopFollow();
+  renderChart();
+  setStatus('');
+  saveState();
+}
+
+function setMultiplier(key, val) {
+  const m = parseFloat(val);
+  multipliers.set(key, isFinite(m) && m !== 0 ? m : 1.0);
+  if (chart && range) chart.setOption({series: mainSeries().concat(overviewSeries())});
+  saveState();
+}
+
+function toggleAutoScale() {
+  autoScaleMode = !autoScaleMode;
+  styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+  if (chart && range) chart.setOption({yAxis: [{scale: autoScaleMode}, {}]});
+  saveState();
+}
+function styleToggle(btn, on) {
+  btn.style.background = on ? 'var(--primary-bg,#e8f0fe)' : '';
+  btn.style.fontWeight = on ? '600' : '';
+}
+
+// ─── Legend: value at window end, min/max of the window, multiplier, remove ──
+function windowStats(key) {
+  const pts = (mainData.get(key) || []).filter(p => win && p[0] >= win[0] && p[0] <= win[1]);
+  if (!pts.length) return null;
+  let mn = Infinity, mx = -Infinity;
+  for (const p of pts) { mn = Math.min(mn, p[2]); mx = Math.max(mx, p[3]); }
+  return {last: pts[pts.length - 1][1], min: mn, max: mx};
+}
+
+function renderLegend() {
+  const el = document.getElementById('chart-legend');
+  if (!selectedSignals.size) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = '';
+  for (const [key, sig] of selectedSignals) {
+    const row = document.createElement('div');
+    row.className = 'hist-legend-row';
+
+    const swatch = document.createElement('span');
+    swatch.className = 'hist-legend-swatch';
+    swatch.style.background = sig.color;
+    const name = document.createElement('span');
+    name.className = 'hist-legend-name';
+    name.textContent = sigLabel(sig);
+    const range_ = document.createElement('span');
+    range_.className = 'text-muted hist-legend-range';
+    range_.dataset.legendRange = key;
+    const val = document.createElement('span');
+    val.className = 'hist-legend-val';
+    val.style.color = sig.color;
+    val.dataset.legendVal = key;
+    const x = document.createElement('span');
+    x.className = 'text-muted';
+    x.textContent = '×';
+
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = '0.1'; inp.min = '0.001';
+    const mul = multipliers.get(key) || 1.0;
+    inp.value = Number.isInteger(mul * 10) ? mul.toFixed(1) : mul;
+    inp.className = 'input input-sm';
+    inp.style.cssText = 'width:58px;padding:1px 4px;font-size:.82rem;text-align:right';
+    inp.title = 'Scale multiplier for chart display';
+    inp.addEventListener('input', () => setMultiplier(key, inp.value));
+
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn btn-ghost btn-xs';
+    rm.style.cssText = 'padding:2px 6px;color:var(--red,#ef4444)';
+    rm.title = 'Remove signal';
+    rm.textContent = '✕';
+    rm.addEventListener('click', () => removeSignal(key));
+
+    row.append(swatch, name, range_, val, x, inp, rm);
+    el.appendChild(row);
+  }
+  updateLegendValues();
+}
+
+function updateLegendValues() {
+  for (const key of selectedSignals.keys()) {
+    const st = windowStats(key);
+    const val = document.querySelector(`[data-legend-val="${CSS.escape(key)}"]`);
+    const rng = document.querySelector(`[data-legend-range="${CSS.escape(key)}"]`);
+    if (!val || !rng) continue;
+    val.textContent = st ? fmtVal(st.last) : '—';
+    rng.textContent = st ? `min ${fmtVal(st.min)} · max ${fmtVal(st.max)}` : (range ? 'no data' : '');
+  }
+}
+
+function updatePlaceholder() {
+  const ph = document.getElementById('chart-placeholder');
+  if (ph) ph.style.display = selectedSignals.size && range ? 'none' : 'flex';
+}
+
+// ─── Session persistence (survive tab navigation) ────────────────────────────
+function saveState() {
+  const state = {
+    signals: Array.from(selectedSignals.entries()),
+    multipliers: Array.from(multipliers.entries()),
+    autoScaleMode, mode, presetSec, range, win,
+    follow: !!followTimer,
+    target: document.getElementById('targetSel')?.value || null,
+  };
+  try { sessionStorage.setItem(SS_KEY, JSON.stringify(state)); } catch {}
+}
+
+function restoreState() {
+  let state;
+  try { state = JSON.parse(sessionStorage.getItem(SS_KEY) || 'null'); } catch { state = null; }
+  if (!state) { setMode('last'); markPreset(86400); return; }
+  selectedSignals = new Map(state.signals || []);
+  multipliers = new Map(state.multipliers || []);
+  autoScaleMode = !!state.autoScaleMode;
+  styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+  const sel = document.getElementById('targetSel');
+  if (sel && state.target && sel.querySelector(`option[value="${state.target}"]`)) sel.value = state.target;
+  for (const key of selectedSignals.keys()) {
+    const [serverId, nodeId] = key.split('|');
+    document.querySelectorAll('.chart-var-checkbox').forEach(cb => {
+      if (cb.dataset.server === serverId && cb.dataset.node === nodeId) cb.checked = true;
+    });
+  }
+  setMode(state.mode || 'last');
+  markPreset(state.presetSec || 0);
+  if (state.mode === 'last' && state.presetSec && state.follow) {
+    // A following view continues at "now"
+    const now = Date.now();
+    range = [now - state.presetSec * 1000, now];
+    win = [...range];
+    document.getElementById('followChk').checked = true;
+    startFollow();
+  } else if (state.range) {
+    range = state.range;
+    win = state.win || [...state.range];
+  }
+  if (range) {
+    document.getElementById('fromInp').value = toLocalInput(range[0]);
+    document.getElementById('toInp').value = toLocalInput(range[1]);
+    document.getElementById('startInp').value = toLocalInput(range[0]);
+  }
+  loadAll();
+}
+
+// ─── Saved views (shared with the Live Chart) ────────────────────────────────
+function _onViewSelChange() {
+  const id = document.getElementById('loadViewSel').value;
+  document.getElementById('loadViewBtn').disabled = !id;
+  document.getElementById('deleteViewBtn').disabled = !id;
+}
+
+async function _refreshViewDropdown() {
+  const sel = document.getElementById('loadViewSel');
+  const cur = sel.value;
+  try {
+    const list = await (await fetch('/chart/configs')).json();
+    sel.innerHTML = '<option value="">Select…</option>';
+    for (const v of list) {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.name;
+      sel.appendChild(opt);
+    }
+    if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
+  } catch {}
+  _onViewSelChange();
+}
+
+async function saveView() {
+  if (!selectedSignals.size) { alert('No signals selected.'); return; }
+  const name = prompt('Name for this view:');
+  if (!name || !name.trim()) return;
+  const mul = {};
+  for (const [k, v] of multipliers) mul[k] = v;
+  const rangeSec = presetSec || (range ? Math.round((range[1] - range[0]) / 1000) : 0);
+  try {
+    const resp = await fetch('/chart/configs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name.trim(), signals: Array.from(selectedSignals.values()),
+        auto_scale_mode: autoScaleMode, multipliers: mul, history_range_seconds: rangeSec}),
+    });
+    const saved = await resp.json();
+    await _refreshViewDropdown();
+    document.getElementById('loadViewSel').value = saved.id;
+    _onViewSelChange();
+    setStatus('View "' + saved.name + '" saved.');
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+async function loadSelectedView() {
+  const id = document.getElementById('loadViewSel').value;
+  if (!id) return;
+  try {
+    const cfg = await (await fetch('/chart/configs/' + id)).json();
+    if (cfg.error) { alert(cfg.error); return; }
+    stopFollow();
+    document.querySelectorAll('.chart-var-checkbox:checked').forEach(cb => { cb.checked = false; });
+    selectedSignals = new Map(cfg.signals.map(s => [sigKey(s.server_id, s.node_id), s]));
+    multipliers = new Map(Object.entries(cfg.multipliers || {}));
+    for (const key of selectedSignals.keys()) {
+      const [serverId, nodeId] = key.split('|');
+      document.querySelectorAll('.chart-var-checkbox').forEach(cb => {
+        if (cb.dataset.server === serverId && cb.dataset.node === nodeId) cb.checked = true;
+      });
+    }
+    autoScaleMode = !!cfg.auto_scale_mode;
+    styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+    applyPreset(cfg.history_range_seconds || presetSec || 86400);
+  } catch (e) {
+    alert('Load failed: ' + e.message);
+  }
+}
+
+async function deleteSelectedView() {
+  const sel = document.getElementById('loadViewSel');
+  const id = sel.value;
+  if (!id) return;
+  if (!confirm('Delete view "' + (sel.options[sel.selectedIndex]?.text || id) + '"?')) return;
+  try {
+    await fetch('/chart/configs/' + id + '/delete', {method: 'POST'});
+    await _refreshViewDropdown();
+    setStatus('View deleted.');
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// ─── Wire up ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('#modeSeg .seg-btn').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+document.querySelectorAll('#quickChips .chip').forEach(c => c.addEventListener('click', () => applyPreset(+c.dataset.s)));
+document.getElementById('followChk').addEventListener('change', e => e.target.checked ? startFollow() : (stopFollow(), saveState()));
+window.addEventListener('beforeunload', saveState);
+
+const _now = Date.now();
+document.getElementById('fromInp').value = toLocalInput(_now - 6 * 36e5);
+document.getElementById('toInp').value = toLocalInput(_now);
+document.getElementById('startInp').value = toLocalInput(_now - 2 * 36e5);
+restoreState();
+_refreshViewDropdown();
+</script>
+{% endblock %}
