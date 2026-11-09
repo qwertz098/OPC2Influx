@@ -28,6 +28,8 @@
               title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <button id="fillBtn" class="btn btn-ghost btn-sm" onclick="toggleFill()"
+              title="Fill the area under each line">▨ Fill</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
              title="Sliding window: only the most recent data is kept; older points scroll off. ∞ keeps everything (up to the memory cap).">
         Time frame:
@@ -180,6 +182,7 @@ let paused           = false;
 let polling          = false;
 let logTimeMode      = false;
 let autoScaleMode    = false;
+let fillMode         = false;
 let chartInitialized = false;
 let pollingTimer     = null;
 let startedAt        = null;
@@ -344,6 +347,19 @@ function toggleLogTime() {
   renderChart();
 }
 
+// ─── Fill toggle ──────────────────────────────────────────────────────────────
+function toggleFill() {
+  fillMode = !fillMode;
+  styleFillBtn();
+  chartInitialized = false;
+  renderChart();
+}
+function styleFillBtn() {
+  const btn = document.getElementById('fillBtn');
+  btn.style.background = fillMode ? 'var(--primary-bg,#e8f0fe)' : '';
+  btn.style.fontWeight = fillMode ? '600' : '';
+}
+
 // ─── Auto scale toggle ────────────────────────────────────────────────────────
 function toggleAutoScale() {
   autoScaleMode = !autoScaleMode;
@@ -420,6 +436,7 @@ function buildSeries() {
       showSymbol: false,
       lineStyle: {color: sig.color, width: 1.5},
       itemStyle: {color: sig.color},
+      areaStyle: fillMode ? {color: sig.color, opacity: 0.12} : undefined,
       data,
     });
   }
@@ -615,6 +632,7 @@ function saveState() {
     paused,
     logTimeMode,
     autoScaleMode,
+    fillMode,
     startedAt,
     interval: document.getElementById('intervalSel').value,
     maxTime:  document.getElementById('maxTimeSel').value,
@@ -628,6 +646,8 @@ function restoreState() {
   if (!raw) return;
   let state;
   try { state = JSON.parse(raw); } catch { return; }
+  fillMode = !!state.fillMode;   // display preference, kept even without signals
+  styleFillBtn();
   if (!state.signals || !state.signals.length) return;
 
   // Restore Maps
@@ -740,6 +760,7 @@ async function saveView() {
     max_time_seconds: parseInt(document.getElementById('maxTimeSel').value),
     log_time_mode: logTimeMode,
     auto_scale_mode: autoScaleMode,
+    fill_mode: fillMode,
     multipliers: mul,
   };
   try {
@@ -779,6 +800,8 @@ async function loadSelectedView() {
     document.getElementById('maxTimeSel').value  = String(cfg.max_time_seconds || 3600);
     logTimeMode   = !!cfg.log_time_mode;
     autoScaleMode = !!cfg.auto_scale_mode;
+    fillMode      = !!cfg.fill_mode;
+    styleFillBtn();
     const logBtn   = document.getElementById('logTimeBtn');
     logBtn.style.background = logTimeMode   ? 'var(--primary-bg,#e8f0fe)' : '';
     logBtn.style.fontWeight  = logTimeMode   ? '600' : '';

@@ -214,6 +214,7 @@ async def save_chart_config(request: Request, state: RuntimeState = Depends(get_
         max_time_seconds=body.get("max_time_seconds", 3600),
         log_time_mode=bool(body.get("log_time_mode", False)),
         auto_scale_mode=bool(body.get("auto_scale_mode", False)),
+        fill_mode=bool(body.get("fill_mode", False)),
         multipliers=body.get("multipliers", {}),
         history_range_seconds=int(body.get("history_range_seconds") or 0),
         created_at=now,

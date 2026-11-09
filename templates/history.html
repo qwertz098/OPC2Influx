@@ -60,6 +60,8 @@
       </label>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <button id="fillBtn" class="btn btn-ghost btn-sm" onclick="toggleFill()"
+              title="Fill the area under each mean line">▨ Fill</button>
       <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
       <span style="margin-left:auto"></span>
       <button class="btn btn-ghost btn-sm" onclick="saveView()" title="Save signals, multipliers and range length as a named view">Save view</button>
@@ -165,6 +167,7 @@ const SS_KEY = 'history_state';
 let selectedSignals = new Map(); // key → {server_id, node_id, path, name, color, label, raw}
 let multipliers     = new Map(); // key → float
 let autoScaleMode   = false;
+let fillMode        = false;
 let mode      = 'last';          // last | fromto | startdur
 let presetSec = 86400;           // active quick range (mode "last"), 0 = custom
 let range     = null;            // [from, to] ms — the whole range (overview)
@@ -304,6 +307,7 @@ function mainSeries() {
       data: d.map(p => [p[0], (p[3] - p[2]) * m])});
     series.push({id: 'mean|' + key, name: sigLabel(sig), type: 'line', xAxisIndex: 0, yAxisIndex: 0,
       symbol: 'none', lineStyle: {color: sig.color, width: 1.5}, itemStyle: {color: sig.color},
+      areaStyle: fillMode ? {color: sig.color, opacity: 0.10} : undefined,
       data: d.map(p => [p[0], p[1] * m])});
   }
   return series;
@@ -549,6 +553,12 @@ function toggleAutoScale() {
   if (chart && range) chart.setOption({yAxis: [{scale: autoScaleMode}, {}]});
   saveState();
 }
+function toggleFill() {
+  fillMode = !fillMode;
+  styleToggle(document.getElementById('fillBtn'), fillMode);
+  if (chart && range) renderChart();
+  saveState();
+}
 function styleToggle(btn, on) {
   btn.style.background = on ? 'var(--primary-bg,#e8f0fe)' : '';
   btn.style.fontWeight = on ? '600' : '';
@@ -633,7 +643,7 @@ function saveState() {
   const state = {
     signals: Array.from(selectedSignals.entries()),
     multipliers: Array.from(multipliers.entries()),
-    autoScaleMode, mode, presetSec, range, win,
+    autoScaleMode, fillMode, mode, presetSec, range, win,
     follow: !!followTimer,
     target: document.getElementById('targetSel')?.value || null,
   };
@@ -648,6 +658,8 @@ function restoreState() {
   multipliers = new Map(state.multipliers || []);
   autoScaleMode = !!state.autoScaleMode;
   styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+  fillMode = !!state.fillMode;
+  styleToggle(document.getElementById('fillBtn'), fillMode);
   const sel = document.getElementById('targetSel');
   if (sel && state.target && sel.querySelector(`option[value="${state.target}"]`)) sel.value = state.target;
   for (const key of selectedSignals.keys()) {
@@ -713,7 +725,7 @@ async function saveView() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name: name.trim(), signals: Array.from(selectedSignals.values()),
-        auto_scale_mode: autoScaleMode, multipliers: mul, history_range_seconds: rangeSec}),
+        auto_scale_mode: autoScaleMode, fill_mode: fillMode, multipliers: mul, history_range_seconds: rangeSec}),
     });
     const saved = await resp.json();
     await _refreshViewDropdown();
@@ -743,6 +755,8 @@ async function loadSelectedView() {
     }
     autoScaleMode = !!cfg.auto_scale_mode;
     styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+    fillMode = !!cfg.fill_mode;
+    styleToggle(document.getElementById('fillBtn'), fillMode);
     applyPreset(cfg.history_range_seconds || presetSec || 86400);
   } catch (e) {
     alert('Load failed: ' + e.message);
