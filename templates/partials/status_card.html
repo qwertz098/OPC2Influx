@@ -36,7 +36,9 @@
         {% set pts = status.writes_total + status.writes_partial %}
         {% set est = status.bytes_estimated %}
         {% set bpd = influx_bytes_per_day.get(t.id) if influx_bytes_per_day is defined else none %}
-        <span class="status-url text-muted text-xs">{{ pts }}/{{ status.writes_attempted }} points written{% if status.writes_partial %} ({{ status.writes_partial }} with field conflicts){% endif %}{% if est > 0 %} · ~{{ fmt_bytes(est) }}{% if bpd %} (~{{ fmt_bytes(bpd) }}/day){% endif %}{% endif %}</span>
+        {% set size = influx_sizes.get(t.id) if influx_sizes is defined else none %}
+        {% set growth = influx_growth.get(t.id) if influx_growth is defined else none %}
+        <span class="status-url text-muted text-xs">{{ pts }}/{{ status.writes_attempted }} points written{% if status.writes_partial %} ({{ status.writes_partial }} with field conflicts){% endif %}{% if size %} · <span title="Disk size of bucket '{{ t.bucket }}' as reported by InfluxDB, of which {{ fmt_bytes(size.wal) }} is still in the write-ahead log (shrinks when compacted)">{{ fmt_bytes(size.total) }} in bucket{% if growth %} (~{{ fmt_bytes(growth) }}/day){% endif %}</span>{% elif est > 0 %} · ~{{ fmt_bytes(est) }}{% if bpd %} (~{{ fmt_bytes(bpd) }}/day){% endif %}{% endif %}</span>
         {% if status.last_write %}
         <span class="status-url text-muted text-xs">last: {{ status.last_write | format_dt }}</span>
         {% endif %}
