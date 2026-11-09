@@ -399,6 +399,7 @@ class SavedChartConfig(BaseModel):
     log_time_mode: bool = False
     auto_scale_mode: bool = False
     multipliers: dict[str, float] = {}
+    history_range_seconds: int = 0  # History tab: relative range ("last N s"), 0 = none
     created_at: str = ""
 
 

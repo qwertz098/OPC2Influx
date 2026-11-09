@@ -1,12 +1,12 @@
 @echo off
-rem Builds release v0.1.2 again and pushes it as a separate image
-rem (opcua2influxdb12), e.g. to run it side by side with the current version.
+rem Builds release v0.1.3 again and pushes it as a separate image
+rem (opcua2influxdb13), e.g. to run it side by side with the current version.
 rem The source comes from the git tag via a temporary worktree, so this
 rem folder's checkout is not touched.
 rem Machine-specific values (EDGE_IP) are read from build_and_push_edge.local.cmd.
 set EDGE_IP=192.168.1.1
-set RELEASE_TAG=v0.1.2
-set IMAGE_NAME=opcua2influxdb12
+set RELEASE_TAG=v0.1.3
+set IMAGE_NAME=opcua2influxdb13
 set IMAGE_TAG=latest
 
 cd /d "%~dp0"
