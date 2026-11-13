@@ -58,15 +58,10 @@
           {% for t in influx_targets %}<option value="{{ t.id }}">{{ t.display_name }}</option>{% endfor %}
         </select>
       </label>
-      <span class="scale-ctl" title="Auto Scale: the Y axis follows the data range instead of starting at zero">
-        <span class="text-sm text-muted">↕ Auto Scale</span>
-        <span class="seg seg-toggle">
-          <button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
-                  title="Left Y axis: scale to the data range instead of starting at zero">L</button>
-          <button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
-                  title="Right Y axis: scale to the data range instead of starting at zero">R</button>
-        </span>
-      </span>
+      <span class="seg seg-toggle"><button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
+              title="Left Y axis: scale to the data range instead of starting at zero">↕ Auto L</button></span>
+      <span class="seg seg-toggle"><button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
+              title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
       <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
               title="Fill the area under each mean line">▨ Shaded</button></span>
       <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>

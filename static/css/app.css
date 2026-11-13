@@ -433,8 +433,7 @@ tr[id^="edit-"]:empty { display: none; }
 .axis-pick label { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
 .axis-pick input { margin: 0; }
 
-/* On/off button group with clear contrast: Auto Scale L / R */
-.scale-ctl { display: inline-flex; align-items: center; gap: 6px; }
+/* On/off buttons with clear contrast (Log Time, Auto L / R, Shaded) */
 .seg-toggle { border-color: var(--frame, var(--border)); }
 .seg-toggle .seg-btn { min-width: 30px; padding: 3px 9px; font-weight: 600; color: var(--muted); background: var(--surface); }
 .seg-toggle .seg-btn + .seg-btn { border-left-color: var(--frame, var(--border)); }
