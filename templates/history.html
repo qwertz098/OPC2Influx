@@ -26,7 +26,7 @@
           <button type="button" class="chip" data-s="2592000">30 d</button>
         </div>
         <label class="checkbox-label text-sm" title="Reload every 10 s; the end of the range follows 'now'">
-          <input type="checkbox" id="followChk"> Follow
+          <input type="checkbox" id="followChk" autocomplete="off"> Follow
         </label>
       </div>
 
@@ -193,7 +193,11 @@ function toLocalInput(t) {
   const d = new Date(t - new Date().getTimezoneOffset() * 6e4);
   return d.toISOString().slice(0, 16);
 }
-function setStatus(msg) { document.getElementById('statusMsg').textContent = msg; }
+// Every status message carries " · following" exactly while the follow timer runs
+function setStatus(msg) {
+  const text = msg.replace(' · following', '');
+  document.getElementById('statusMsg').textContent = followTimer && text ? text + ' · following' : text;
+}
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 async function fetchHistory(from, to, points) {
@@ -231,7 +235,6 @@ function statusText(bucketS, target, error) {
   let msg = `Window ${fmtTime(win[0])} – ${fmtTime(win[1])} (${fmtDur(win[1] - win[0])}) · ` +
             `1 point = ${fmtDur(bucketS * 1000)} · mean with min/max band · InfluxDB ${target}`;
   if (missing.length) msg += ` · no data: ${missing.map(k => sigLabel(selectedSignals.get(k))).join(', ')}`;
-  if (followTimer) msg += ' · following';
   if (error) msg += ` · query error: ${error}`;
   return msg;
 }
@@ -465,10 +468,13 @@ function applyStartDuration() {
 
 // Whole range: move by a fraction of its length, or stretch around its centre
 function customRange() { stopFollow(); markPreset(0); }
+// There is no data in the future: the range never ends after "now"
 function shiftRange(frac) {
   if (!range) return;
   customRange();
-  const d = (range[1] - range[0]) * frac;
+  let d = (range[1] - range[0]) * frac;
+  if (d > 0) d = Math.min(d, Date.now() - range[1]);
+  if (frac > 0 && d <= 0) return;
   win = [win[0] + d, win[1] + d];
   setRange(range[0] + d, range[1] + d, true);
 }
@@ -477,7 +483,9 @@ function stretchRange(factor) {
   customRange();
   const mid = (range[0] + range[1]) / 2, half = (range[1] - range[0]) * factor / 2;
   if (half < 30e3) return;
-  setRange(mid - half, mid + half, true);
+  // Widening near "now" grows into the past only
+  const end = Math.min(mid + half, Math.max(Date.now(), range[1]));
+  setRange(end - 2 * half, end, true);
 }
 
 function updateRangeLabel() {
@@ -489,7 +497,12 @@ function updateRangeLabel() {
 function stopFollow() {
   clearInterval(followTimer);
   followTimer = null;
-  document.getElementById('followChk').checked = false;
+  showFollowState();
+}
+// Checkbox and status line both reflect whether the follow timer really runs
+function showFollowState() {
+  document.getElementById('followChk').checked = !!followTimer;
+  setStatus(document.getElementById('statusMsg').textContent);
 }
 function startFollow() {
   if (!presetSec) applyPreset(86400);
@@ -501,6 +514,7 @@ function startFollow() {
     win = atEnd ? [Math.max(range[0], win[0] + d), now] : [Math.max(range[0], win[0]), win[1]];
     loadAll();
   }, FOLLOW_MS);
+  showFollowState();
   saveState();
 }
 
@@ -675,7 +689,6 @@ function restoreState() {
     const now = Date.now();
     range = [now - state.presetSec * 1000, now];
     win = [...range];
-    document.getElementById('followChk').checked = true;
     startFollow();
   } else if (state.range) {
     range = state.range;
