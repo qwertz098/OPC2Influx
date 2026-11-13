@@ -64,15 +64,15 @@
               title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
       <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
               title="Fill the area under each mean line">▨ Shaded</button></span>
-      <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
+      <button class="btn btn-tool btn-sm" onclick="unselectAll()">✕ Unselect All</button>
       <span style="margin-left:auto"></span>
-      <button class="btn btn-ghost btn-sm" onclick="saveView()" title="Save signals, multipliers and range length as a named view">Save view</button>
+      <button class="btn btn-tool btn-sm" onclick="saveView()" title="Save signals, multipliers and range length as a named view">Save view</button>
       <div style="display:flex;align-items:center;gap:.3rem">
         <select id="loadViewSel" class="input input-sm" style="width:auto;padding:.15rem .4rem;max-width:160px" onchange="_onViewSelChange()">
           <option value="">Select…</option>
         </select>
-        <button id="loadViewBtn"   class="btn btn-ghost btn-sm" onclick="loadSelectedView()"   title="Load selected view" disabled>Load</button>
-        <button id="deleteViewBtn" class="btn btn-ghost btn-sm" onclick="deleteSelectedView()" title="Delete selected view" style="color:var(--red,#ef4444)" disabled>✕</button>
+        <button id="loadViewBtn"   class="btn btn-tool btn-sm" onclick="loadSelectedView()"   title="Load selected view" disabled>Load</button>
+        <button id="deleteViewBtn" class="btn btn-danger btn-sm" onclick="deleteSelectedView()" title="Delete selected view" disabled>✕</button>
       </div>
     </div>
     <div class="hist-status" id="statusMsg"></div>

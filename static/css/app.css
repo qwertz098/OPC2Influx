@@ -439,3 +439,6 @@ tr[id^="edit-"]:empty { display: none; }
 .seg-toggle .seg-btn + .seg-btn { border-left-color: var(--frame, var(--border)); }
 .seg-toggle .seg-btn:hover { color: var(--text); background: var(--bg); }
 .seg-toggle .seg-btn.active { background: var(--accent); color: var(--surface); }  /* surface: white on light, dark on dark themes */
+/* Toolbar buttons: same frame as the on/off buttons, so all read as buttons */
+.btn-tool { background: var(--surface); color: var(--muted); border-color: var(--frame, var(--border)); font-weight: 600; }
+.btn-tool:hover:not(:disabled) { background: var(--bg); color: var(--text); }
