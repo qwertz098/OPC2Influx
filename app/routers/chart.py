@@ -225,6 +225,7 @@ async def save_chart_config(request: Request, state: RuntimeState = Depends(get_
         max_time_seconds=body.get("max_time_seconds", 3600),
         log_time_mode=bool(body.get("log_time_mode", False)),
         auto_scale_mode=bool(body.get("auto_scale_mode", False)),
+        auto_scale_right=bool(body.get("auto_scale_right", False)),
         y_min=_opt_float(body.get("y_min")),
         y_max=_opt_float(body.get("y_max")),
         y2_min=_opt_float(body.get("y2_min")),

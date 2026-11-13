@@ -73,6 +73,7 @@ const INTERVAL_MS = CFG.interval_ms || 1000;
 const MAX_SEC = CFG.max_time_seconds || 0;
 const LOG_TIME = !!CFG.log_time_mode;
 const AUTO_SCALE = !!CFG.auto_scale_mode;
+const AUTO_SCALE_R = !!CFG.auto_scale_right;   // right Y axis
 // Fixed Y axis limits of the saved view (null = automatic)
 const Y_MIN = typeof CFG.y_min === 'number' ? CFG.y_min : null;
 const Y_MAX = typeof CFG.y_max === 'number' ? CFG.y_max : null;
@@ -231,7 +232,7 @@ function initChart() {
     legend: { show: false },
     xAxis: themedAxis(T, xAxis),
     yAxis: [themedAxis(T, { type: 'value', axisLine: {show:true}, scale: AUTO_SCALE, splitNumber: ySplits, min: Y_MIN, max: Y_MAX })]
-      .concat(RIGHT_AXIS ? [themedAxis(T, { type: 'value', position: 'right', axisLine: {show:true}, scale: AUTO_SCALE,
+      .concat(RIGHT_AXIS ? [themedAxis(T, { type: 'value', position: 'right', axisLine: {show:true}, scale: AUTO_SCALE_R,
                                             splitNumber: ySplits, min: Y2_MIN, max: Y2_MAX, splitLine: {show: false} })] : []),
     series: buildSeries(),
   }, true);

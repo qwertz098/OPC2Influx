@@ -26,8 +26,10 @@
       </label>
       <button id="logTimeBtn" class="btn btn-ghost btn-sm" onclick="toggleLogTime()"
               title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
-      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
-              title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('L')"
+              title="Left Y axis: scale to the data range instead of starting from zero">⤢ Auto Scale L</button>
+      <button id="autoScaleBtnR" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('R')" style="margin-left:-6px"
+              title="Right Y axis: scale to the data range instead of starting from zero">R</button>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each line">▨ Shaded</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
@@ -184,7 +186,8 @@ let running          = false;
 let paused           = false;
 let polling          = false;
 let logTimeMode      = false;
-let autoScaleMode    = false;
+let autoScaleMode    = false;   // left Y axis
+let autoScaleR       = false;   // right Y axis
 let shadedMode         = false;
 let chartInitialized = false;
 let pollingTimer     = null;
@@ -375,13 +378,19 @@ function onYRangeChange() {
 }
 
 // ─── Auto scale toggle ────────────────────────────────────────────────────────
-function toggleAutoScale() {
-  autoScaleMode = !autoScaleMode;
-  const btn = document.getElementById('autoScaleBtn');
-  btn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  btn.style.fontWeight = autoScaleMode ? '600' : '';
+function toggleAutoScale(side) {
+  if (side === 'R') autoScaleR = !autoScaleR; else autoScaleMode = !autoScaleMode;
+  styleScaleBtns();
   chartInitialized = false;
   renderChart();
+  saveState();
+}
+function styleScaleBtns() {
+  for (const [id, on] of [['autoScaleBtn', autoScaleMode], ['autoScaleBtnR', autoScaleR]]) {
+    const btn = document.getElementById(id);
+    btn.style.background = on ? 'var(--primary-bg,#e8f0fe)' : '';
+    btn.style.fontWeight = on ? '600' : '';
+  }
 }
 
 // ─── Poll ─────────────────────────────────────────────────────────────────────
@@ -559,7 +568,7 @@ function initChart() {
   const yAxes = [themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode,
                                      ...yLimits('L'), axisLabel: {showMinLabel: false, showMaxLabel: false}})];
   if (right) yAxes.push(themedAxis(colors, {type: 'value', position: 'right', axisLine: {show: true},
-                                            scale: autoScaleMode, ...yLimits('R'), splitLine: {show: false},
+                                            scale: autoScaleR, ...yLimits('R'), splitLine: {show: false},
                                             axisLabel: {showMinLabel: false, showMaxLabel: false}}));
   c.setOption({
     animation: false,
@@ -710,6 +719,7 @@ function saveState() {
     paused,
     logTimeMode,
     autoScaleMode,
+    autoScaleR,
     yRange: readYRanges(),
     shadedMode,
     startedAt,
@@ -737,6 +747,7 @@ function restoreState() {
   multipliers     = new Map(state.multipliers || []);
   logTimeMode     = !!state.logTimeMode;
   autoScaleMode   = !!state.autoScaleMode;
+  autoScaleR      = !!state.autoScaleR;
   startedAt       = state.startedAt || null;
   lastPollAt      = state.running && !state.paused ? state.lastPollAt || null : null;
 
@@ -746,9 +757,7 @@ function restoreState() {
   const logBtn = document.getElementById('logTimeBtn');
   logBtn.style.background = logTimeMode ? 'var(--primary-bg,#e8f0fe)' : '';
   logBtn.style.fontWeight  = logTimeMode ? '600' : '';
-  const scaleBtn = document.getElementById('autoScaleBtn');
-  scaleBtn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  scaleBtn.style.fontWeight  = autoScaleMode ? '600' : '';
+  styleScaleBtns();
 
   // Re-check tree checkboxes that match restored signals
   for (const [key] of selectedSignals) {
@@ -842,6 +851,7 @@ async function saveView() {
     max_time_seconds: parseInt(document.getElementById('maxTimeSel').value),
     log_time_mode: logTimeMode,
     auto_scale_mode: autoScaleMode,
+    auto_scale_right: autoScaleR,
     y_min: readYRange('L').min,
     y_max: readYRange('L').max,
     y2_min: readYRange('R').min,
@@ -886,15 +896,14 @@ async function loadSelectedView() {
     document.getElementById('maxTimeSel').value  = String(cfg.max_time_seconds || 3600);
     logTimeMode   = !!cfg.log_time_mode;
     autoScaleMode = !!cfg.auto_scale_mode;
+    autoScaleR    = !!cfg.auto_scale_right;
     setYRanges({L: {min: cfg.y_min, max: cfg.y_max}, R: {min: cfg.y2_min, max: cfg.y2_max}});
     shadedMode      = !!cfg.shaded;
     styleShadedBtn();
     const logBtn   = document.getElementById('logTimeBtn');
     logBtn.style.background = logTimeMode   ? 'var(--primary-bg,#e8f0fe)' : '';
     logBtn.style.fontWeight  = logTimeMode   ? '600' : '';
-    const scaleBtn = document.getElementById('autoScaleBtn');
-    scaleBtn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
-    scaleBtn.style.fontWeight  = autoScaleMode ? '600' : '';
+    styleScaleBtns();
 
     chartInitialized = false;
     renderChart();

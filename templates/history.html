@@ -58,8 +58,10 @@
           {% for t in influx_targets %}<option value="{{ t.id }}">{{ t.display_name }}</option>{% endfor %}
         </select>
       </label>
-      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
-              title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('L')"
+              title="Left Y axis: scale to the data range instead of starting from zero">⤢ Auto Scale L</button>
+      <button id="autoScaleBtnR" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('R')" style="margin-left:-6px"
+              title="Right Y axis: scale to the data range instead of starting from zero">R</button>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each mean line">▨ Shaded</button>
       <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
@@ -169,7 +171,8 @@ const SS_KEY = 'history_state';
 
 let selectedSignals = new Map(); // key → {server_id, node_id, path, name, color, label, raw}
 let multipliers     = new Map(); // key → float
-let autoScaleMode   = false;
+let autoScaleMode   = false;   // left Y axis
+let autoScaleR      = false;   // right Y axis
 let shadedMode        = false;
 let mode      = 'last';          // last | fromto | startdur
 let presetSec = 86400;           // active quick range (mode "last"), 0 = custom
@@ -363,7 +366,7 @@ function renderChart() {
     themedAxis(k, {type: 'value', gridIndex: 1, scale: true, axisLabel: {show: false}, splitLine: {show: false}}),
   ];
   if (right) yAxes.push(
-    themedAxis(k, {type: 'value', gridIndex: 0, position: 'right', scale: autoScaleMode, axisLine: {show: true},
+    themedAxis(k, {type: 'value', gridIndex: 0, position: 'right', scale: autoScaleR, axisLine: {show: true},
                    ...yLimits('R'), splitLine: {show: false}, axisLabel: {showMinLabel: false, showMaxLabel: false}}),
     themedAxis(k, {type: 'value', gridIndex: 1, position: 'right', scale: true, axisLabel: {show: false},
                    splitLine: {show: false}, axisLine: {show: false}, axisTick: {show: false}}),
@@ -576,9 +579,13 @@ function setMultiplier(key, val) {
   saveState();
 }
 
-function toggleAutoScale() {
-  autoScaleMode = !autoScaleMode;
+function styleScaleBtns() {
   styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+  styleToggle(document.getElementById('autoScaleBtnR'), autoScaleR);
+}
+function toggleAutoScale(side) {
+  if (side === 'R') autoScaleR = !autoScaleR; else autoScaleMode = !autoScaleMode;
+  styleScaleBtns();
   if (chart && range) renderChart();
   saveState();
 }
@@ -677,7 +684,7 @@ function saveState() {
   const state = {
     signals: Array.from(selectedSignals.entries()),
     multipliers: Array.from(multipliers.entries()),
-    autoScaleMode, shadedMode, mode, presetSec, range, win,
+    autoScaleMode, autoScaleR, shadedMode, mode, presetSec, range, win,
     yRange: readYRanges(),
     follow: !!followTimer,
     target: document.getElementById('targetSel')?.value || null,
@@ -692,7 +699,8 @@ function restoreState() {
   selectedSignals = new Map(state.signals || []);
   multipliers = new Map(state.multipliers || []);
   autoScaleMode = !!state.autoScaleMode;
-  styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+  autoScaleR = !!state.autoScaleR;
+  styleScaleBtns();
   if (state.yRange) setYRanges(state.yRange);
   shadedMode = !!state.shadedMode;
   styleToggle(document.getElementById('shadedBtn'), shadedMode);
@@ -760,7 +768,7 @@ async function saveView() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name: name.trim(), signals: Array.from(selectedSignals.values()),
-        auto_scale_mode: autoScaleMode, y_min: readYRange('L').min, y_max: readYRange('L').max,
+        auto_scale_mode: autoScaleMode, auto_scale_right: autoScaleR, y_min: readYRange('L').min, y_max: readYRange('L').max,
         y2_min: readYRange('R').min, y2_max: readYRange('R').max, shaded: shadedMode, multipliers: mul, history_range_seconds: rangeSec}),
     });
     const saved = await resp.json();
@@ -790,7 +798,8 @@ async function loadSelectedView() {
       });
     }
     autoScaleMode = !!cfg.auto_scale_mode;
-    styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+    autoScaleR = !!cfg.auto_scale_right;
+    styleScaleBtns();
     setYRanges({L: {min: cfg.y_min, max: cfg.y_max}, R: {min: cfg.y2_min, max: cfg.y2_max}});
     shadedMode = !!cfg.shaded;
     styleToggle(document.getElementById('shadedBtn'), shadedMode);

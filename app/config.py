@@ -397,7 +397,8 @@ class SavedChartConfig(BaseModel):
     interval_ms: int = 1000
     max_time_seconds: int = 3600
     log_time_mode: bool = False
-    auto_scale_mode: bool = False
+    auto_scale_mode: bool = False   # left Y axis: scale to the data instead of from zero
+    auto_scale_right: bool = False  # the same for the right Y axis
     y_min: Optional[float] = None   # fixed Y axis limits; None = automatic
     y_max: Optional[float] = None
     y2_min: Optional[float] = None  # right Y axis (signals with "axis": "R")
