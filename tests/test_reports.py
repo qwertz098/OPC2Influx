@@ -50,7 +50,7 @@ def test_parse_send_time(raw, minutes):
 # ─── Figures ─────────────────────────────────────────────────────────────────
 def test_flux_lines_never_start_with_parenthesis():
     # Flux reads a line starting with "(" as a call on the line before
-    q = gauge_flux("A", "B", "C", "D", True) + counter_flux("A", "B")
+    q = gauge_flux("A", "B", "C", "D", True) + counter_flux("A", "B", "C")
     assert not any(line.lstrip().startswith("(") for line in q.splitlines())
 
 
@@ -69,8 +69,9 @@ def test_apply_gauge_with_energy_and_seed():
 def test_apply_counter():
     fig = SignalFigures(label="c", kind="counter")
     _apply(fig, ReportSignalConfig(subscription_id="c", kind="counter"),
-           {"reading": (1071.0, None), "prev_reading": (1047.0, None)})
+           {"reading": (1071.0, None), "prev_reading": (1047.0, None), "prev2_reading": (1027.0, None)})
     assert fig.counter_change == 24.0
+    assert fig.prev_counter_change == 20.0
 
 
 # ─── E-mail ──────────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ def _figures():
     return ReportFigures(report=rep, period=period, source="Local", signals=[
         SignalFigures(label="Power", kind="gauge", unit="W", mean=1000, prev_mean=900, min=0, min_time=t,
                       max=2500, max_time=t, energy=24, prev_energy=21.6, energy_unit="kWh"),
-        SignalFigures(label="Meter", kind="counter", unit="kWh", reading=1071, prev_reading=1047),
+        SignalFigures(label="Meter", kind="counter", unit="kWh", reading=1071, prev_reading=1047, prev2_reading=1027),
         SignalFigures(label="Gone", kind="gauge", error="subscription not found"),
     ])
 
@@ -100,6 +101,7 @@ def test_mail_bodies():
     assert subject(fig) == "Daily report Plant <1>: Thu 12.11.2026"
     text = text_body(fig, "utc")
     assert "Mean: 1 000 W" in text and "+100.0 (+11.1 %)" in text and "Change: 24.00 kWh" in text
+    assert "Change before: 20.00 kWh" in text and "+4.00 (+20.0 %)" in text
     assert "Error: subscription not found" in text
     page = html_body(fig, "utc")
     assert "Plant &lt;1&gt;" in page and "<table" in page and "24.00 kWh" in page

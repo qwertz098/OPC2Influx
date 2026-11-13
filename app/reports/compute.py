@@ -7,8 +7,9 @@ gauge   – time-weighted mean, min and max (with time) of the period, the mean
           one: the signal is resampled to one value per minute, gaps are
           filled with the previous value, and mean / energy are taken from
           that series.
-counter – meter reading at the end of the period and at the end of the
-          period before; the change since the last report is their difference.
+counter – meter reading at the end of the period, of the period before and
+          of the one before that: the change since the last report and the
+          change in the period before, to compare the two.
 """
 from __future__ import annotations
 
@@ -44,13 +45,22 @@ class SignalFigures:
     # counter
     reading: Optional[float] = None
     prev_reading: Optional[float] = None
+    prev2_reading: Optional[float] = None
     error: str = ""
 
     @property
     def counter_change(self) -> Optional[float]:
+        """Change since the last report (this period)."""
         if self.reading is None or self.prev_reading is None:
             return None
         return self.reading - self.prev_reading
+
+    @property
+    def prev_counter_change(self) -> Optional[float]:
+        """Change in the period before, to compare with."""
+        if self.prev_reading is None or self.prev2_reading is None:
+            return None
+        return self.prev_reading - self.prev2_reading
 
 
 @dataclass
@@ -107,11 +117,12 @@ def gauge_flux(src_period: str, src_prev: str, seed_period: str, seed_prev: str,
     return "\n".join(parts) + "\n"
 
 
-def counter_flux(src_end: str, src_prev_end: str) -> str:
+def counter_flux(src_end: str, src_prev_end: str, src_prev2_end: str) -> str:
     return (
-        f"cur = {src_end}\nprev = {src_prev_end}\n"
+        f"cur = {src_end}\nprev = {src_prev_end}\nprev2 = {src_prev2_end}\n"
         'cur |> last() |> set(key: "f", value: "reading") |> yield(name: "reading")\n'
         'prev |> last() |> set(key: "f", value: "prev_reading") |> yield(name: "prev_reading")\n'
+        'prev2 |> last() |> set(key: "f", value: "prev2_reading") |> yield(name: "prev2_reading")\n'
     )
 
 
@@ -151,7 +162,8 @@ async def compute(state, report: ReportConfig, period: Period) -> ReportFigures:
                                              target.type_suffix, a, b)
             if sig.kind == "counter":
                 flux = counter_flux(src(period.end - COUNTER_LOOKBACK, period.end),
-                                    src(period.start - COUNTER_LOOKBACK, period.start))
+                                    src(period.start - COUNTER_LOOKBACK, period.start),
+                                    src(period.prev_start - COUNTER_LOOKBACK, period.prev_start))
             else:
                 flux = gauge_flux(src(period.start, period.end), src(period.prev_start, period.start),
                                   src(period.start - COUNTER_LOOKBACK, period.start),
@@ -175,7 +187,7 @@ def _apply(fig: SignalFigures, sig: ReportSignalConfig, values: dict,
            hours: float = 0.0, prev_hours: float = 0.0) -> None:
     get = lambda k: values[k][0] if k in values else None  # noqa: E731
     if sig.kind == "counter":
-        fig.reading, fig.prev_reading = get("reading"), get("prev_reading")
+        fig.reading, fig.prev_reading, fig.prev2_reading = get("reading"), get("prev_reading"), get("prev2_reading")
         return
     fig.mean, fig.prev_mean = get("mean"), get("prev_mean")
     e, pe = get("energy"), get("prev_energy")

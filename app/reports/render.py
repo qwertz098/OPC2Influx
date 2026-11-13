@@ -66,11 +66,12 @@ def _gauge_rows(sigs: list[SignalFigures], tz_mode: str) -> list[list[str]]:
 
 def _counter_rows(sigs: list[SignalFigures]) -> list[list[str]]:
     return [[s.label, _with_unit(s.reading, s.unit), _with_unit(s.prev_reading, s.unit),
-             _with_unit(s.counter_change, s.unit), s.error] for s in sigs]
+             _with_unit(s.counter_change, s.unit), _with_unit(s.prev_counter_change, s.unit),
+             fmt_change(s.counter_change, s.prev_counter_change), s.error] for s in sigs]
 
 
 GAUGE_HEAD = ["Trend value", "Mean", "vs. previous", "Min", "Max", "Integral", "vs. previous", ""]
-COUNTER_HEAD = ["Counter reading", "Reading", "Last report", "Change", ""]
+COUNTER_HEAD = ["Counter reading", "Reading", "Last report", "Change", "Change before", "vs. previous", ""]
 
 
 def text_body(fig: ReportFigures, tz_mode: str) -> str:
