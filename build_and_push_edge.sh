@@ -21,7 +21,14 @@ docker buildx use "$BUILDER"
 # Release shown on the settings page, e.g. v0.1.4 or v0.1.4-3-gabc1234
 APP_RELEASE="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
 
+# The version is part of the image name (e.g. opcua2influxdb_v0.1.8): the IXON
+# gateway only picks up an update when the image name changes
+IMAGE="${EDGE_IP}:5000/${IMAGE_NAME}_${APP_RELEASE}:${IMAGE_TAG}"
+
 docker buildx build --platform linux/arm64/v8 \
                     --build-arg APP_RELEASE="${APP_RELEASE}" \
-                    --tag ${EDGE_IP}:5000/${IMAGE_NAME}:${IMAGE_TAG} \
+                    --tag "${IMAGE}" \
                     --push .
+set +x
+echo "Pushed ${IMAGE}"
+echo "In the IXON container settings select image: ${IMAGE_NAME}_${APP_RELEASE}"
