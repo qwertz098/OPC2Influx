@@ -40,24 +40,9 @@
       </label>
       <span class="seg seg-toggle"><button type="button" id="logTimeBtn" class="seg-btn" onclick="toggleLogTime()"
               title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button></span>
-      <span class="seg seg-toggle"><button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
-              title="Left Y axis: scale to the data range instead of starting at zero">↕ Auto L</button></span>
-      <span class="seg seg-toggle"><button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
-              title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
-      <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
-              title="Fill the area under each line">▨ Shaded</button></span>
-      <button class="btn btn-tool btn-sm" onclick="unselectAll()">✕ Unselect All</button>
+      {% set shaded_title = "Fill the area under each line" %}{% include "partials/chart_toggles.html" %}
       <span id="statusMsg" class="text-sm text-muted" style="margin-left:auto"></span>
-      <button class="btn btn-tool btn-sm" onclick="saveView()" title="Save current signals and settings as a named view">Save view</button>
-      <div style="display:flex;align-items:center;gap:.3rem">
-        <select id="loadViewSel" class="input input-sm" style="width:auto;padding:.15rem .4rem;max-width:160px" onchange="_onViewSelChange()">
-          <option value="">Select…</option>
-        </select>
-        <button id="loadViewBtn"   class="btn btn-tool btn-sm" onclick="loadSelectedView()"   title="Load selected view"                         disabled>Load</button>
-        <button id="deleteViewBtn" class="btn btn-danger btn-sm" onclick="deleteSelectedView()" title="Delete selected view" disabled>✕</button>
-        <button id="openEmbedBtn"  class="btn btn-tool btn-sm" onclick="openEmbedView()"      title="Open the selected saved view as an embed in a new tab (select a saved view first)" disabled>↗</button>
-        <span class="info-icon" title="Embed view appearance: add parameters joined by +&#10;Scheme: dark (default), light, medium, solarized-light, solarized-dark, system&#10;Look: studio (default), mono, contrast&#10;shaded: fill the area under the lines&#10;Example: /chart/embed/{id}/light+contrast+shaded"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-      </div>
+      {% set save_title = "Save current signals and settings as a named view" %}{% set embed = true %}{% include "partials/chart_view_bar.html" %}
     </div>
   </div>
 </div>
@@ -253,9 +238,7 @@ function removeSignal(key) {
 }
 
 function unselectAll() {
-  if (!selectedSignals.size) return;
-  const n = selectedSignals.size;
-  if (!confirm(`Remove all ${n} signal${n === 1 ? '' : 's'} from the chart?`)) return;
+  if (!confirmUnselect(selectedSignals.size)) return;
   // Stop a running chart first — otherwise the poll timer keeps running and
   // the toolbar stays in its "Running…" state with no signals selected.
   if (running) clearCharting();
@@ -353,8 +336,7 @@ document.addEventListener('visibilitychange', () => {
 // ─── Log time toggle ──────────────────────────────────────────────────────────
 function toggleLogTime() {
   logTimeMode = !logTimeMode;
-  const btn = document.getElementById('logTimeBtn');
-  btn.classList.toggle('active', !!logTimeMode);
+  setToggle('logTimeBtn', logTimeMode);
   chartInitialized = false;
   renderChart();
 }
@@ -367,8 +349,7 @@ function toggleShaded() {
   renderChart();
 }
 function styleShadedBtn() {
-  const btn = document.getElementById('shadedBtn');
-  btn.classList.toggle('active', !!shadedMode);
+  setToggle('shadedBtn', shadedMode);
 }
 
 // ─── Manual Y range ───────────────────────────────────────────────────────────
@@ -387,8 +368,8 @@ function toggleAutoScale(side) {
   saveState();
 }
 function styleScaleBtns() {
-  document.getElementById('autoScaleBtn').classList.toggle('active', autoScaleMode);
-  document.getElementById('autoScaleBtnR').classList.toggle('active', autoScaleR);
+  setToggle('autoScaleBtn', autoScaleMode);
+  setToggle('autoScaleBtnR', autoScaleR);
 }
 
 // ─── Poll ─────────────────────────────────────────────────────────────────────
@@ -647,34 +628,9 @@ function buildLegend() {
     valEl.textContent = fmtVal(last);
     row.appendChild(valEl);
 
-    // × label
-    const xLabel = document.createElement('span');
-    xLabel.style.cssText = 'color:var(--text-muted);font-size:.82rem;flex-shrink:0';
-    xLabel.textContent = '×';
-    row.appendChild(xLabel);
-
-    // Multiplier input — stays in DOM between polls
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.step = '0.1';
-    inp.min  = '0.001';
-    inp.value = Number.isInteger(mul * 10) ? mul.toFixed(1) : mul;
-    inp.dataset.mulKey = key;
-    inp.style.cssText = 'width:58px;padding:1px 4px;font-size:.82rem;text-align:right';
-    inp.className = 'input input-sm';
-    inp.title = 'Scale multiplier for chart display';
-    inp.addEventListener('input', () => setMultiplier(key, inp.value));
-    row.appendChild(inp);
-
-    // Remove button — unselects this signal (unchecks its source checkbox too)
-    const rmBtn = document.createElement('button');
-    rmBtn.type = 'button';
-    rmBtn.className = 'btn btn-ghost btn-xs';
-    rmBtn.style.cssText = 'padding:2px 6px;color:var(--red,#ef4444);flex-shrink:0';
-    rmBtn.title = 'Remove signal';
-    rmBtn.textContent = '✕';
-    rmBtn.addEventListener('click', () => removeSignal(key));
-    row.appendChild(rmBtn);
+    // × multiplier input (stays in the DOM between polls) and remove button
+    row.append(...legendMultiplier(key, mul, v => setMultiplier(key, v)),
+               legendRemoveButton(() => removeSignal(key)));
 
     el.appendChild(row);
   }
@@ -752,8 +708,7 @@ function restoreState() {
   // Restore UI controls
   document.getElementById('intervalSel').value = state.interval || '1000';
   document.getElementById('maxTimeSel').value  = state.maxTime  || '3600';
-  const logBtn = document.getElementById('logTimeBtn');
-  logBtn.classList.toggle('active', !!logTimeMode);
+  setToggle('logTimeBtn', logTimeMode);
   styleScaleBtns();
 
   // Re-check tree checkboxes that match restored signals
@@ -804,36 +759,8 @@ pollAndRender = async function() { await _origPoll(); saveState(); };
 restoreState();
 
 // ─── Saved views ─────────────────────────────────────────────────────────────
-function _onViewSelChange() {
-  const id = document.getElementById('loadViewSel').value;
-  document.getElementById('loadViewBtn').disabled   = !id;
-  document.getElementById('deleteViewBtn').disabled = !id;
-  document.getElementById('openEmbedBtn').disabled  = !id;
-}
 
-function openEmbedView() {
-  const id = document.getElementById('loadViewSel').value;
-  if (!id) return;
-  window.open('/chart/embed/' + id, '_blank', 'noopener');
-}
 
-async function _refreshViewDropdown() {
-  const sel = document.getElementById('loadViewSel');
-  const cur = sel.value;
-  try {
-    const resp = await fetch('/chart/configs');
-    const list = await resp.json();
-    sel.innerHTML = '<option value="">Select…</option>';
-    for (const v of list) {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      opt.textContent = v.name;
-      sel.appendChild(opt);
-    }
-    if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
-  } catch {}
-  _onViewSelChange();
-}
 
 async function saveView() {
   if (!selectedSignals.size) { alert('No signals selected.'); return; }
@@ -897,8 +824,7 @@ async function loadSelectedView() {
     setYRanges({L: {min: cfg.y_min, max: cfg.y_max}, R: {min: cfg.y2_min, max: cfg.y2_max}});
     shadedMode      = !!cfg.shaded;
     styleShadedBtn();
-    const logBtn   = document.getElementById('logTimeBtn');
-    logBtn.classList.toggle('active', !!logTimeMode);
+    setToggle('logTimeBtn', logTimeMode);
     styleScaleBtns();
 
     chartInitialized = false;
@@ -910,20 +836,6 @@ async function loadSelectedView() {
   }
 }
 
-async function deleteSelectedView() {
-  const sel = document.getElementById('loadViewSel');
-  const id  = sel.value;
-  const name = sel.options[sel.selectedIndex]?.text;
-  if (!id) return;
-  if (!confirm('Delete view "' + (name || id) + '"?')) return;
-  try {
-    await fetch('/chart/configs/' + id + '/delete', {method: 'POST'});
-    await _refreshViewDropdown();
-    setStatus('View deleted.');
-  } catch (e) {
-    alert('Delete failed: ' + e.message);
-  }
-}
 
 // Populate dropdown on load
 _refreshViewDropdown();

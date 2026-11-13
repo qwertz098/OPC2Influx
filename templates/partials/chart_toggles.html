@@ -1,0 +1,9 @@
+{# On/off buttons and Unselect All, shared by the Live Chart and History.
+   Set shaded_title before including. #}
+<span class="seg seg-toggle"><button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
+        title="Left Y axis: scale to the data range instead of starting at zero">↕ Auto L</button></span>
+<span class="seg seg-toggle"><button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
+        title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
+<span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
+        title="{{ shaded_title }}">▨ Shaded</button></span>
+<button class="btn btn-tool btn-sm" onclick="unselectAll()">✕ Unselect All</button>
