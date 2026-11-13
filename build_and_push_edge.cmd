@@ -40,6 +40,9 @@ rem is unaffected and the new version takes effect on the next start.
         docker buildx create --name %BUILDER% --config "%BUILDKIT_TOML%" --bootstrap
     )
     docker buildx use %BUILDER%
+    rem Release tags name the image and the settings page's version; --force also
+    rem replaces local tags that were moved on GitHub
+    git fetch --tags --force --quiet origin || echo Warning: could not fetch release tags, the version may be incomplete.
     rem Release shown on the settings page, e.g. v0.1.4 or v0.1.4-3-gabc1234
     set APP_RELEASE=dev
     for /f "delims=" %%v in ('git describe --tags --always --dirty 2^>nul') do set APP_RELEASE=%%v

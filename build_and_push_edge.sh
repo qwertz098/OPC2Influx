@@ -18,6 +18,10 @@ fi
 
 docker buildx use "$BUILDER"
 
+# Release tags name the image and the settings page's version; --force also
+# replaces local tags that were moved on GitHub
+git fetch --tags --force --quiet origin || echo "Warning: could not fetch release tags, the version may be incomplete."
+
 # Release shown on the settings page, e.g. v0.1.4 or v0.1.4-3-gabc1234
 APP_RELEASE="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
 
