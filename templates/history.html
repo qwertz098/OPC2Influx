@@ -60,6 +60,10 @@
       </label>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <span class="y-range" title="Fixed Y axis range. Leave a field empty to scale that end automatically (Auto Scale decides whether the automatic end may leave zero).">
+        Y <input id="yMinInp" class="input input-sm y-inp" type="number" step="any" placeholder="min" onchange="onYRangeChange()">
+        – <input id="yMaxInp" class="input input-sm y-inp" type="number" step="any" placeholder="max" onchange="onYRangeChange()">
+      </span>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each mean line">▨ Shaded</button>
       <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
@@ -359,7 +363,7 @@ function renderChart() {
        axisLabel: {fontSize: 10}, splitLine: {show: false}}),
     ],
     yAxis: [
-      themedAxis(k, {type: 'value', gridIndex: 0, scale: autoScaleMode, axisLine: {show: true}}),
+      themedAxis(k, {type: 'value', gridIndex: 0, scale: autoScaleMode, axisLine: {show: true}, ...yLimits()}),
       themedAxis(k, {type: 'value', gridIndex: 1, scale: true, axisLabel: {show: false}, splitLine: {show: false}}),
     ],
     dataZoom: [
@@ -567,6 +571,10 @@ function toggleAutoScale() {
   if (chart && range) chart.setOption({yAxis: [{scale: autoScaleMode}, {}]});
   saveState();
 }
+function onYRangeChange() {
+  if (chart && range) chart.setOption({yAxis: [yLimits(), {}]});
+  saveState();
+}
 function toggleShaded() {
   shadedMode = !shadedMode;
   styleToggle(document.getElementById('shadedBtn'), shadedMode);
@@ -658,6 +666,7 @@ function saveState() {
     signals: Array.from(selectedSignals.entries()),
     multipliers: Array.from(multipliers.entries()),
     autoScaleMode, shadedMode, mode, presetSec, range, win,
+    yRange: readYRange(),
     follow: !!followTimer,
     target: document.getElementById('targetSel')?.value || null,
   };
@@ -672,6 +681,7 @@ function restoreState() {
   multipliers = new Map(state.multipliers || []);
   autoScaleMode = !!state.autoScaleMode;
   styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+  if (state.yRange) setYRange(state.yRange.min, state.yRange.max);
   shadedMode = !!state.shadedMode;
   styleToggle(document.getElementById('shadedBtn'), shadedMode);
   const sel = document.getElementById('targetSel');
@@ -738,7 +748,7 @@ async function saveView() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name: name.trim(), signals: Array.from(selectedSignals.values()),
-        auto_scale_mode: autoScaleMode, shaded: shadedMode, multipliers: mul, history_range_seconds: rangeSec}),
+        auto_scale_mode: autoScaleMode, y_min: readYRange().min, y_max: readYRange().max, shaded: shadedMode, multipliers: mul, history_range_seconds: rangeSec}),
     });
     const saved = await resp.json();
     await _refreshViewDropdown();
@@ -768,6 +778,7 @@ async function loadSelectedView() {
     }
     autoScaleMode = !!cfg.auto_scale_mode;
     styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
+    setYRange(cfg.y_min, cfg.y_max);
     shadedMode = !!cfg.shaded;
     styleToggle(document.getElementById('shadedBtn'), shadedMode);
     applyPreset(cfg.history_range_seconds || presetSec || 86400);

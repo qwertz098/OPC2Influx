@@ -28,6 +28,10 @@
               title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
+      <span class="y-range" title="Fixed Y axis range. Leave a field empty to scale that end automatically (Auto Scale decides whether the automatic end may leave zero).">
+        Y <input id="yMinInp" class="input input-sm y-inp" type="number" step="any" placeholder="min" onchange="onYRangeChange()">
+        – <input id="yMaxInp" class="input input-sm y-inp" type="number" step="any" placeholder="max" onchange="onYRangeChange()">
+      </span>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each line">▨ Shaded</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
@@ -360,6 +364,13 @@ function styleShadedBtn() {
   btn.style.fontWeight = shadedMode ? '600' : '';
 }
 
+// ─── Manual Y range ───────────────────────────────────────────────────────────
+function onYRangeChange() {
+  chartInitialized = false;
+  renderChart();
+  saveState();
+}
+
 // ─── Auto scale toggle ────────────────────────────────────────────────────────
 function toggleAutoScale() {
   autoScaleMode = !autoScaleMode;
@@ -499,7 +510,7 @@ function initChart() {
     }),
     legend: {show: false},
     xAxis: themedAxis(colors, xAxis),
-    yAxis: themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode}),
+    yAxis: themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode, ...yLimits()}),
     series: buildSeries(),
   }, true);   // notMerge=true: full reset (only on structural changes)
 
@@ -635,6 +646,7 @@ function saveState() {
     paused,
     logTimeMode,
     autoScaleMode,
+    yRange: readYRange(),
     shadedMode,
     startedAt,
     interval: document.getElementById('intervalSel').value,
@@ -651,6 +663,7 @@ function restoreState() {
   try { state = JSON.parse(raw); } catch { return; }
   shadedMode = !!state.shadedMode;   // display preference, kept even without signals
   styleShadedBtn();
+  if (state.yRange) setYRange(state.yRange.min, state.yRange.max);
   if (!state.signals || !state.signals.length) return;
 
   // Restore Maps
@@ -763,6 +776,8 @@ async function saveView() {
     max_time_seconds: parseInt(document.getElementById('maxTimeSel').value),
     log_time_mode: logTimeMode,
     auto_scale_mode: autoScaleMode,
+    y_min: readYRange().min,
+    y_max: readYRange().max,
     shaded: shadedMode,
     multipliers: mul,
   };
@@ -803,6 +818,7 @@ async function loadSelectedView() {
     document.getElementById('maxTimeSel').value  = String(cfg.max_time_seconds || 3600);
     logTimeMode   = !!cfg.log_time_mode;
     autoScaleMode = !!cfg.auto_scale_mode;
+    setYRange(cfg.y_min, cfg.y_max);
     shadedMode      = !!cfg.shaded;
     styleShadedBtn();
     const logBtn   = document.getElementById('logTimeBtn');

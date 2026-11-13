@@ -404,3 +404,8 @@ tr[id^="edit-"]:empty { display: none; }
    inline edit (no divider line) */
 .form-actions--edit { border-top: none; padding-top: 0; margin-top: 8px; justify-content: flex-end; }
 .form-actions--edit .htmx-indicator, .form-actions--edit [id^="retention-result"] { order: -1; margin-right: auto; }
+
+/* Manual Y axis range in the chart toolbars */
+.y-range { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+.y-inp { width: 76px; padding: .15rem .4rem; }
+.input-invalid { border-color: var(--err, #d33) !important; }

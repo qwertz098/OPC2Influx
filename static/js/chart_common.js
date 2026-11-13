@@ -86,3 +86,36 @@ function hexAlpha(hex, a) {
   const n = parseInt(hex.replace('#', ''), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
+
+// Manual Y axis range: two number inputs #yMinInp / #yMaxInp; an empty field
+// scales that end automatically. Returns {min, max} with null for "auto".
+function readYRange() {
+  const num = id => {
+    const el = document.getElementById(id);
+    const v = el ? el.value.trim() : '';
+    return v === '' || !isFinite(Number(v)) ? null : Number(v);
+  };
+  let min = num('yMinInp'), max = num('yMaxInp');
+  const bad = min !== null && max !== null && min >= max;
+  for (const id of ['yMinInp', 'yMaxInp']) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('input-invalid', bad);
+  }
+  if (bad) min = max = null;   // contradictory: ignore both until fixed
+  return {min, max};
+}
+
+function setYRange(min, max) {
+  const put = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = v === null || v === undefined ? '' : String(v);
+  };
+  put('yMinInp', min);
+  put('yMaxInp', max);
+}
+
+// ECharts yAxis limits: a fixed number, or null for automatic
+function yLimits() {
+  const r = readYRange();
+  return {min: r.min, max: r.max};
+}

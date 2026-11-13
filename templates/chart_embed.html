@@ -73,6 +73,9 @@ const INTERVAL_MS = CFG.interval_ms || 1000;
 const MAX_SEC = CFG.max_time_seconds || 0;
 const LOG_TIME = !!CFG.log_time_mode;
 const AUTO_SCALE = !!CFG.auto_scale_mode;
+// Fixed Y axis limits of the saved view (null = automatic)
+const Y_MIN = typeof CFG.y_min === 'number' ? CFG.y_min : null;
+const Y_MAX = typeof CFG.y_max === 'number' ? CFG.y_max : null;
 const MAX_PTS = 2000;
 
 SIGNALS.forEach((s, i) => { if (!s.color) s.color = COLORS[i % COLORS.length]; });
@@ -223,7 +226,7 @@ function initChart() {
     tooltip: themedTooltip(T, { trigger: 'axis', axisPointer: {type:'cross'}, formatter: tooltipFormatter }),
     legend: { show: false },
     xAxis: themedAxis(T, xAxis),
-    yAxis: themedAxis(T, { type: 'value', axisLine: {show:true}, scale: AUTO_SCALE, splitNumber: ySplits }),
+    yAxis: themedAxis(T, { type: 'value', axisLine: {show:true}, scale: AUTO_SCALE, splitNumber: ySplits, min: Y_MIN, max: Y_MAX }),
     series: buildSeries(),
   }, true);
 }

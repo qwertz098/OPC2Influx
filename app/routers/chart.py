@@ -203,6 +203,17 @@ async def list_chart_configs(state: RuntimeState = Depends(get_state)):
     return JSONResponse([{"id": c.id, "name": c.name} for c in configs])
 
 
+def _opt_float(v) -> float | None:
+    """A finite number, or None for empty / invalid input (= automatic)."""
+    if v is None or v == "":
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
 @router.post("/configs")
 async def save_chart_config(request: Request, state: RuntimeState = Depends(get_state)):
     body = await request.json()
@@ -214,6 +225,8 @@ async def save_chart_config(request: Request, state: RuntimeState = Depends(get_
         max_time_seconds=body.get("max_time_seconds", 3600),
         log_time_mode=bool(body.get("log_time_mode", False)),
         auto_scale_mode=bool(body.get("auto_scale_mode", False)),
+        y_min=_opt_float(body.get("y_min")),
+        y_max=_opt_float(body.get("y_max")),
         shaded=bool(body.get("shaded", False)),
         multipliers=body.get("multipliers", {}),
         history_range_seconds=int(body.get("history_range_seconds") or 0),
