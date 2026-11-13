@@ -60,17 +60,6 @@ async def delete_tag(tag_id: str, state: RuntimeState = Depends(get_state)):
     return RedirectResponse("/config/tags", status_code=303)
 
 
-@router.get("/{tag_id}/edit", response_class=HTMLResponse)
-async def edit_tag(tag_id: str, request: Request, state: RuntimeState = Depends(get_state)):
-    tag = next((t for t in state.config.tags.tags if t.id == tag_id), None)
-    if not tag:
-        return HTMLResponse("Not found", status_code=404)
-    return templates.TemplateResponse(request, "partials/tag_edit_form.html", {
-        "request": request,
-        "tag": tag,
-    })
-
-
 @router.post("/{tag_id}/update")
 async def update_tag(tag_id: str, request: Request, state: RuntimeState = Depends(get_state)):
     form = await request.form()

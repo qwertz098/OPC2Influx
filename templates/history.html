@@ -58,22 +58,9 @@
           {% for t in influx_targets %}<option value="{{ t.id }}">{{ t.display_name }}</option>{% endfor %}
         </select>
       </label>
-      <span class="seg seg-toggle"><button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
-              title="Left Y axis: scale to the data range instead of starting at zero">↕ Auto L</button></span>
-      <span class="seg seg-toggle"><button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
-              title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
-      <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
-              title="Fill the area under each mean line">▨ Shaded</button></span>
-      <button class="btn btn-tool btn-sm" onclick="unselectAll()">✕ Unselect All</button>
+      {% set shaded_title = "Fill the area under each mean line" %}{% include "partials/chart_toggles.html" %}
       <span style="margin-left:auto"></span>
-      <button class="btn btn-tool btn-sm" onclick="saveView()" title="Save signals, multipliers and range length as a named view">Save view</button>
-      <div style="display:flex;align-items:center;gap:.3rem">
-        <select id="loadViewSel" class="input input-sm" style="width:auto;padding:.15rem .4rem;max-width:160px" onchange="_onViewSelChange()">
-          <option value="">Select…</option>
-        </select>
-        <button id="loadViewBtn"   class="btn btn-tool btn-sm" onclick="loadSelectedView()"   title="Load selected view" disabled>Load</button>
-        <button id="deleteViewBtn" class="btn btn-danger btn-sm" onclick="deleteSelectedView()" title="Delete selected view" disabled>✕</button>
-      </div>
+      {% set save_title = "Save signals, multipliers and range length as a named view" %}{% set embed = false %}{% include "partials/chart_view_bar.html" %}
     </div>
     <div class="hist-status" id="statusMsg"></div>
   </div>
@@ -563,9 +550,7 @@ function removeSignal(key) {
 }
 
 function unselectAll() {
-  if (!selectedSignals.size) return;
-  const n = selectedSignals.size;
-  if (!confirm(`Remove all ${n} signal${n === 1 ? '' : 's'} from the chart?`)) return;
+  if (!confirmUnselect(selectedSignals.size)) return;
   document.querySelectorAll('.chart-var-checkbox:checked').forEach(cb => { cb.checked = false; });
   selectedSignals.clear();
   multipliers.clear();
@@ -583,8 +568,8 @@ function setMultiplier(key, val) {
 }
 
 function styleScaleBtns() {
-  document.getElementById('autoScaleBtn').classList.toggle('active', autoScaleMode);
-  document.getElementById('autoScaleBtnR').classList.toggle('active', autoScaleR);
+  setToggle('autoScaleBtn', autoScaleMode);
+  setToggle('autoScaleBtnR', autoScaleR);
 }
 function toggleAutoScale(side) {
   if (side === 'R') autoScaleR = !autoScaleR; else autoScaleMode = !autoScaleMode;
@@ -598,12 +583,9 @@ function onYRangeChange() {
 }
 function toggleShaded() {
   shadedMode = !shadedMode;
-  styleToggle(document.getElementById('shadedBtn'), shadedMode);
+  setToggle('shadedBtn', shadedMode);
   if (chart && range) renderChart();
   saveState();
-}
-function styleToggle(btn, on) {
-  btn.classList.toggle('active', !!on);
 }
 
 // ─── Legend: value at window end, min/max of the window, multiplier, remove ──
@@ -637,29 +619,11 @@ function renderLegend() {
     val.className = 'hist-legend-val';
     val.style.color = sig.color;
     val.dataset.legendVal = key;
-    const x = document.createElement('span');
-    x.className = 'text-muted';
-    x.textContent = '×';
-
-    const inp = document.createElement('input');
-    inp.type = 'number'; inp.step = '0.1'; inp.min = '0.001';
-    const mul = multipliers.get(key) || 1.0;
-    inp.value = Number.isInteger(mul * 10) ? mul.toFixed(1) : mul;
-    inp.className = 'input input-sm';
-    inp.style.cssText = 'width:58px;padding:1px 4px;font-size:.82rem;text-align:right';
-    inp.title = 'Scale multiplier for chart display';
-    inp.addEventListener('input', () => setMultiplier(key, inp.value));
-
-    const rm = document.createElement('button');
-    rm.type = 'button';
-    rm.className = 'btn btn-ghost btn-xs';
-    rm.style.cssText = 'padding:2px 6px;color:var(--red,#ef4444)';
-    rm.title = 'Remove signal';
-    rm.textContent = '✕';
-    rm.addEventListener('click', () => removeSignal(key));
 
     const axis = axisPicker(sig, () => { if (chart && range) renderChart(); saveState(); });
-    row.append(swatch, name, range_, axis, val, x, inp, rm);
+    row.append(swatch, name, range_, axis, val,
+               ...legendMultiplier(key, multipliers.get(key) || 1.0, v => setMultiplier(key, v)),
+               legendRemoveButton(() => removeSignal(key)));
     el.appendChild(row);
   }
   updateLegendValues();
@@ -705,7 +669,7 @@ function restoreState() {
   styleScaleBtns();
   if (state.yRange) setYRanges(state.yRange);
   shadedMode = !!state.shadedMode;
-  styleToggle(document.getElementById('shadedBtn'), shadedMode);
+  setToggle('shadedBtn', shadedMode);
   const sel = document.getElementById('targetSel');
   if (sel && state.target && sel.querySelector(`option[value="${state.target}"]`)) sel.value = state.target;
   for (const key of selectedSignals.keys()) {
@@ -735,28 +699,7 @@ function restoreState() {
 }
 
 // ─── Saved views (shared with the Live Chart) ────────────────────────────────
-function _onViewSelChange() {
-  const id = document.getElementById('loadViewSel').value;
-  document.getElementById('loadViewBtn').disabled = !id;
-  document.getElementById('deleteViewBtn').disabled = !id;
-}
 
-async function _refreshViewDropdown() {
-  const sel = document.getElementById('loadViewSel');
-  const cur = sel.value;
-  try {
-    const list = await (await fetch('/chart/configs')).json();
-    sel.innerHTML = '<option value="">Select…</option>';
-    for (const v of list) {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      opt.textContent = v.name;
-      sel.appendChild(opt);
-    }
-    if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
-  } catch {}
-  _onViewSelChange();
-}
 
 async function saveView() {
   if (!selectedSignals.size) { alert('No signals selected.'); return; }
@@ -804,26 +747,13 @@ async function loadSelectedView() {
     styleScaleBtns();
     setYRanges({L: {min: cfg.y_min, max: cfg.y_max}, R: {min: cfg.y2_min, max: cfg.y2_max}});
     shadedMode = !!cfg.shaded;
-    styleToggle(document.getElementById('shadedBtn'), shadedMode);
+    setToggle('shadedBtn', shadedMode);
     applyPreset(cfg.history_range_seconds || presetSec || 86400);
   } catch (e) {
     alert('Load failed: ' + e.message);
   }
 }
 
-async function deleteSelectedView() {
-  const sel = document.getElementById('loadViewSel');
-  const id = sel.value;
-  if (!id) return;
-  if (!confirm('Delete view "' + (sel.options[sel.selectedIndex]?.text || id) + '"?')) return;
-  try {
-    await fetch('/chart/configs/' + id + '/delete', {method: 'POST'});
-    await _refreshViewDropdown();
-    setStatus('View deleted.');
-  } catch (e) {
-    alert('Delete failed: ' + e.message);
-  }
-}
 
 // ─── Wire up ─────────────────────────────────────────────────────────────────
 document.querySelectorAll('#modeSeg .seg-btn').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));

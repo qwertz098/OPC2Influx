@@ -231,3 +231,87 @@ function placeYInputs(chart, axes = {L: 0, R: null}) {
     minCtl.style.top = (rect.y + rect.height - 11) + 'px';
   }
 }
+
+// ─── Toolbar shared by the Live Chart and History ──────────────────────────────
+function setToggle(id, on) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('active', !!on);
+}
+
+function confirmUnselect(n) {
+  return n > 0 && confirm(`Remove all ${n} signal${n === 1 ? '' : 's'} from the chart?`);
+}
+
+// Saved views: dropdown, Load / delete / embed buttons. Uses the page's setStatus().
+function _onViewSelChange() {
+  const id = document.getElementById('loadViewSel').value;
+  for (const btn of ['loadViewBtn', 'deleteViewBtn', 'openEmbedBtn']) {
+    const el = document.getElementById(btn);
+    if (el) el.disabled = !id;
+  }
+}
+
+function openEmbedView() {
+  const id = document.getElementById('loadViewSel').value;
+  if (id) window.open('/chart/embed/' + id, '_blank', 'noopener');
+}
+
+async function _refreshViewDropdown() {
+  const sel = document.getElementById('loadViewSel');
+  const cur = sel.value;
+  try {
+    const list = await (await fetch('/chart/configs')).json();
+    sel.innerHTML = '<option value="">Select…</option>';
+    for (const v of list) {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.name;
+      sel.appendChild(opt);
+    }
+    if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
+  } catch {}
+  _onViewSelChange();
+}
+
+async function deleteSelectedView() {
+  const sel = document.getElementById('loadViewSel');
+  const id = sel.value;
+  if (!id) return;
+  if (!confirm('Delete view "' + (sel.options[sel.selectedIndex]?.text || id) + '"?')) return;
+  try {
+    await fetch('/chart/configs/' + id + '/delete', {method: 'POST'});
+    await _refreshViewDropdown();
+    setStatus('View deleted.');
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// Legend row parts shared by the Live Chart and History: "×" with the display
+// multiplier input, and the remove button.
+function legendMultiplier(key, mul, onInput) {
+  const x = document.createElement('span');
+  x.className = 'text-muted';
+  x.style.cssText = 'font-size:.82rem;flex-shrink:0';
+  x.textContent = '×';
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.step = '0.1'; inp.min = '0.001';
+  inp.value = Number.isInteger(mul * 10) ? mul.toFixed(1) : mul;
+  inp.dataset.mulKey = key;
+  inp.className = 'input input-sm';
+  inp.style.cssText = 'width:58px;padding:1px 4px;font-size:.82rem;text-align:right';
+  inp.title = 'Scale multiplier for chart display';
+  inp.addEventListener('input', () => onInput(inp.value));
+  return [x, inp];
+}
+
+function legendRemoveButton(onClick) {
+  const rm = document.createElement('button');
+  rm.type = 'button';
+  rm.className = 'btn btn-ghost btn-xs';
+  rm.style.cssText = 'padding:2px 6px;color:var(--red,#ef4444);flex-shrink:0';
+  rm.title = 'Remove signal';
+  rm.textContent = '✕';
+  rm.addEventListener('click', onClick);
+  return rm;
+}

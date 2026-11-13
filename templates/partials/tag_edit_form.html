@@ -1,7 +1,8 @@
-<tr id="tag-edit-{{ tag.id }}">
-  <td colspan="7" style="padding:12px;background:var(--surface-2,#f8fafc)">
+{# Inline edit row of one central tag, hidden until Edit toggles it. #}
+<tr id="tag-edit-{{ tag.id }}" style="display:none">
+  <td colspan="7" style="padding:10px 12px;background:var(--panel);border-top:none">
     <form action="/config/tags/{{ tag.id }}/update" method="post">
-      <div class="form-row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0">
         <div class="form-group">
           <label class="form-label">Display Name</label>
           <input class="input input-sm" type="text" name="name" value="{{ tag.name }}" required>
@@ -43,7 +44,7 @@
         <div class="form-buttons">
           <button type="submit" class="btn btn-primary btn-xs">Save</button>
           <button type="button" class="btn btn-ghost btn-xs"
-                  onclick="document.getElementById('tag-edit-{{ tag.id }}').remove()">Cancel</button>
+                  onclick="toggleEditRow('tag-edit-{{ tag.id }}')">Cancel</button>
         </div>
       </div>
     </form>
