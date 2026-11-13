@@ -216,9 +216,17 @@ function placeYInputs(chart, axes = {L: 0, R: null}) {
     for (const [el, v] of [[minEl, ext[0]], [maxEl, ext[1]]]) {
       if (el.dataset.manual !== '1' && document.activeElement !== el) el.value = fmtAxisEnd(v);
     }
-    const left = side === 'L' ? 0 : rect.x + rect.width + 6;
-    const w = side === 'L' ? Math.max(40, rect.x - 6) : Math.max(40, total - left - 10);
-    for (const ctl of [minCtl, maxCtl]) { ctl.style.width = w + 'px'; ctl.style.left = left + 'px'; }
+    // The value text lines up with the axis labels, which ECharts draws 8 px
+    // from the axis line: right-aligned on the left axis, left-aligned on the
+    // right one. INSET = input padding + border.
+    const INSET = 5, GAP = 8;
+    const left = side === 'L' ? 0 : rect.x + rect.width + GAP - INSET;
+    const w = side === 'L' ? Math.max(40, rect.x - GAP + INSET) : Math.max(40, total - left - 10);
+    for (const ctl of [minCtl, maxCtl]) {
+      ctl.style.width = w + 'px';
+      ctl.style.left = left + 'px';
+      ctl.classList.toggle('y-axis-ctl--right', side === 'R');
+    }
     maxCtl.style.top = (rect.y - 11) + 'px';
     minCtl.style.top = (rect.y + rect.height - 11) + 'px';
   }
