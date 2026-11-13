@@ -405,11 +405,26 @@ tr[id^="edit-"]:empty { display: none; }
 .form-actions--edit { border-top: none; padding-top: 0; margin-top: 8px; justify-content: flex-end; }
 .form-actions--edit .htmx-indicator, .form-actions--edit [id^="retention-result"] { order: -1; margin-right: auto; }
 
-/* Manual Y axis range: inputs at the ends of the Y axis */
+/* Y axis end fields: in place of the top and bottom axis labels. Automatic ends
+   look like a label and only show the value; manual ends look like an input. */
 .input-invalid { border-color: var(--err, #d33) !important; }
 .chart-wrap { position: relative; }
+.y-axis-ctl { position: absolute; z-index: 5; display: flex; align-items: center; height: 22px; }
 .y-axis-inp {
-  position: absolute; z-index: 5; height: 22px; padding: 0 4px; font-size: 11px; text-align: right;
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  width: 100%; height: 22px; padding: 0 4px; font-size: 11px; text-align: right;
+  border-color: transparent; background: transparent; color: var(--muted); cursor: pointer;
 }
-.y-axis-inp:placeholder-shown:not(:focus) { opacity: .55; }
+.y-axis-inp:hover { border-color: var(--border); }
+.y-axis-ctl.manual .y-axis-inp {
+  cursor: text; color: var(--text); font-weight: 600;
+  border-color: var(--accent); background: var(--surface);
+}
+.y-auto-btn {
+  display: none; position: absolute; top: -7px; right: -5px; width: 14px; height: 14px; padding: 0;
+  border: none; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10px; line-height: 14px;
+  cursor: pointer;
+}
+.y-axis-ctl.manual .y-auto-btn { display: block; }
+.axis-pick { display: inline-flex; gap: 6px; font-size: .75rem; color: var(--muted); flex-shrink: 0; }
+.axis-pick label { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
+.axis-pick input { margin: 0; }

@@ -152,10 +152,7 @@
   <!-- Right: ECharts live chart -->
   <div class="card">
     <div class="chart-wrap">
-      <input id="yMaxInp" class="input y-axis-inp" type="number" step="any" placeholder="max" hidden
-             title="Upper end of the Y axis. Empty = automatic." onchange="onYRangeChange()">
-      <input id="yMinInp" class="input y-axis-inp" type="number" step="any" placeholder="min" hidden
-             title="Lower end of the Y axis. Empty = automatic (Auto Scale decides whether it may leave zero)." onchange="onYRangeChange()">
+      {% include "partials/y_axis_fields.html" %}
     <div id="chart-area" style="width:100%;height:calc(100vh - 300px);min-height:320px">
       <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
            height:100%;color:var(--text-muted);font-size:.9rem">
@@ -480,7 +477,7 @@ async function backfillGap(fromMs, toMs, intervalMs) {
 function getOrInitChart() {
   if (!chart) {
     chart = echarts.init(document.getElementById('chart-area'));
-    chart.on('finished', () => placeYInputs(chart));
+    chart.on('finished', () => placeYInputs(chart, {L: 0, R: usesRightAxis(selectedSignals) ? 1 : null}));
     window.addEventListener('resize', () => chart.resize());
   }
   return chart;
@@ -505,6 +502,7 @@ function buildSeries() {
       name: sigLabel(sig),
       type: 'line',
       showSymbol: false,
+      yAxisIndex: sigSide(sig) === 'R' ? 1 : 0,
       lineStyle: {color: sig.color, width: 1.5},
       itemStyle: {color: sig.color},
       areaStyle: shadedMode ? {color: sig.color, opacity: 0.12} : undefined,
@@ -557,9 +555,15 @@ function initChart() {
   };
 
   const colors = chartColors();
+  const right = usesRightAxis(selectedSignals);
+  const yAxes = [themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode,
+                                     ...yLimits('L'), axisLabel: {showMinLabel: false, showMaxLabel: false}})];
+  if (right) yAxes.push(themedAxis(colors, {type: 'value', position: 'right', axisLine: {show: true},
+                                            scale: autoScaleMode, ...yLimits('R'), splitLine: {show: false},
+                                            axisLabel: {showMinLabel: false, showMaxLabel: false}}));
   c.setOption({
     animation: false,
-    grid: {left: 60, right: 20, top: 40, bottom: 40},
+    grid: {left: 60, right: right ? 60 : 20, top: 40, bottom: 40},
     tooltip: themedTooltip(colors, {
       trigger: 'axis',
       axisPointer: {type: 'cross'},
@@ -567,7 +571,7 @@ function initChart() {
     }),
     legend: {show: false},
     xAxis: themedAxis(colors, xAxis),
-    yAxis: themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode, ...yLimits()}),
+    yAxis: yAxes,
     series: buildSeries(),
   }, true);   // notMerge=true: full reset (only on structural changes)
 
@@ -625,6 +629,9 @@ function buildLegend() {
     nameEl.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem';
     nameEl.textContent = sigLabel(sig);
     row.appendChild(nameEl);
+
+    // Y axis of this signal: left or right
+    row.appendChild(axisPicker(sig, () => { chartInitialized = false; renderChart(); saveState(); }));
 
     // Actual value — updated in-place by updateLegendValues()
     const valEl = document.createElement('span');
@@ -703,7 +710,7 @@ function saveState() {
     paused,
     logTimeMode,
     autoScaleMode,
-    yRange: readYRange(),
+    yRange: readYRanges(),
     shadedMode,
     startedAt,
     lastPollAt,
@@ -721,7 +728,7 @@ function restoreState() {
   try { state = JSON.parse(raw); } catch { return; }
   shadedMode = !!state.shadedMode;   // display preference, kept even without signals
   styleShadedBtn();
-  if (state.yRange) setYRange(state.yRange.min, state.yRange.max);
+  if (state.yRange) setYRanges(state.yRange);
   if (!state.signals || !state.signals.length) return;
 
   // Restore Maps
@@ -835,8 +842,10 @@ async function saveView() {
     max_time_seconds: parseInt(document.getElementById('maxTimeSel').value),
     log_time_mode: logTimeMode,
     auto_scale_mode: autoScaleMode,
-    y_min: readYRange().min,
-    y_max: readYRange().max,
+    y_min: readYRange('L').min,
+    y_max: readYRange('L').max,
+    y2_min: readYRange('R').min,
+    y2_max: readYRange('R').max,
     shaded: shadedMode,
     multipliers: mul,
   };
@@ -877,7 +886,7 @@ async function loadSelectedView() {
     document.getElementById('maxTimeSel').value  = String(cfg.max_time_seconds || 3600);
     logTimeMode   = !!cfg.log_time_mode;
     autoScaleMode = !!cfg.auto_scale_mode;
-    setYRange(cfg.y_min, cfg.y_max);
+    setYRanges({L: {min: cfg.y_min, max: cfg.y_max}, R: {min: cfg.y2_min, max: cfg.y2_max}});
     shadedMode      = !!cfg.shaded;
     styleShadedBtn();
     const logBtn   = document.getElementById('logTimeBtn');

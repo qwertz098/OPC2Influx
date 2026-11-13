@@ -87,51 +87,139 @@ function hexAlpha(hex, a) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
-// Manual Y axis range: two number inputs #yMinInp / #yMaxInp; an empty field
-// scales that end automatically. Returns {min, max} with null for "auto".
-function readYRange() {
-  const num = id => {
-    const el = document.getElementById(id);
-    const v = el ? el.value.trim() : '';
+// ─── Y axes ──────────────────────────────────────────────────────────────────
+// Each signal sits on the left (default) or right Y axis: sig.axis = 'L' | 'R'.
+function sigSide(sig) { return sig && sig.axis === 'R' ? 'R' : 'L'; }
+function usesRightAxis(signals) {
+  for (const sig of signals.values()) if (sigSide(sig) === 'R') return true;
+  return false;
+}
+
+// Two checkboxes L / R for a legend row; exactly one is ticked.
+function axisPicker(sig, onChange) {
+  const box = document.createElement('span');
+  box.className = 'axis-pick';
+  box.title = 'Y axis of this signal: left or right';
+  for (const side of ['L', 'R']) {
+    const lab = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = sigSide(sig) === side;
+    cb.addEventListener('change', () => {
+      sig.axis = side;              // ticking either box moves the signal there
+      box.querySelectorAll('input').forEach((c, i) => { c.checked = ['L', 'R'][i] === side; });
+      onChange();
+    });
+    lab.append(cb, side);
+    box.appendChild(lab);
+  }
+  return box;
+}
+
+// Y axis end fields (#yMaxInp / #yMinInp, right axis with suffix R) take the
+// place of the axis' top and bottom labels. In automatic mode they only show
+// the current end value; a click switches that end to manual input
+// (data-manual="1"), × switches it back.
+function yInputs(side = 'L') {
+  const sfx = side === 'R' ? 'R' : '';
+  return [document.getElementById('yMinInp' + sfx), document.getElementById('yMaxInp' + sfx)];
+}
+
+function readYRange(side = 'L') {
+  const num = el => {
+    if (!el || el.dataset.manual !== '1') return null;
+    const v = el.value.trim();
     return v === '' || !isFinite(Number(v)) ? null : Number(v);
   };
-  let min = num('yMinInp'), max = num('yMaxInp');
+  const [minEl, maxEl] = yInputs(side);
+  let min = num(minEl), max = num(maxEl);
   const bad = min !== null && max !== null && min >= max;
-  for (const id of ['yMinInp', 'yMaxInp']) {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle('input-invalid', bad);
-  }
+  for (const el of [minEl, maxEl]) if (el) el.classList.toggle('input-invalid', bad);
   if (bad) min = max = null;   // contradictory: ignore both until fixed
   return {min, max};
 }
 
-function setYRange(min, max) {
-  const put = (id, v) => {
-    const el = document.getElementById(id);
-    if (el) el.value = v === null || v === undefined ? '' : String(v);
-  };
-  put('yMinInp', min);
-  put('yMaxInp', max);
+function setYManual(el, on) {
+  if (!el) return;
+  el.dataset.manual = on ? '1' : '';
+  el.readOnly = !on;
+  el.closest('.y-axis-ctl')?.classList.toggle('manual', on);
+  el.title = on ? 'Manual Y axis end. Enter a value; × returns to automatic.'
+                : 'Automatic Y axis end. Click to set it manually.';
+}
+
+function setYRange(min, max, side = 'L') {
+  const [minEl, maxEl] = yInputs(side);
+  for (const [el, v] of [[minEl, min], [maxEl, max]]) {
+    if (!el) continue;
+    const on = v !== null && v !== undefined && v !== '';
+    setYManual(el, on);
+    el.value = on ? String(v) : '';
+  }
+}
+
+// Both axes as stored in page state: {L: {min, max}, R: {min, max}}
+function readYRanges() { return {L: readYRange('L'), R: readYRange('R')}; }
+function setYRanges(r) {
+  r = r || {};
+  // Older state had one {min, max} for the only axis
+  const left = r.L || (('min' in r || 'max' in r) ? r : {});
+  setYRange(left.min, left.max, 'L');
+  setYRange((r.R || {}).min, (r.R || {}).max, 'R');
+}
+
+// Click on an automatic end: keep its current value and make it editable
+function yManualOn(el) {
+  if (el.dataset.manual === '1') return;
+  setYManual(el, true);
+  setTimeout(() => el.select(), 0);
+  onYRangeChange();
+}
+
+function yManualOff(id) {
+  const el = document.getElementById(id);
+  setYManual(el, false);
+  el.value = '';
+  onYRangeChange();
 }
 
 // ECharts yAxis limits: a fixed number, or null for automatic
-function yLimits() {
-  const r = readYRange();
+function yLimits(side = 'L') {
+  const r = readYRange(side);
   return {min: r.min, max: r.max};
 }
 
-// Put the Y range inputs (#yMaxInp / #yMinInp inside the chart's DOM element)
-// at the top and bottom end of the first grid's Y axis, left of the axis line.
-function placeYInputs(chart) {
-  const top = document.getElementById('yMaxInp'), bottom = document.getElementById('yMinInp');
-  if (!top || !bottom || !chart) return;
-  const grid = chart.getModel() && chart.getModel().getComponent('grid', 0);
+function fmtAxisEnd(v) {
+  if (!isFinite(v)) return '';
+  return String(Number(Math.abs(v) >= 1e6 || (v !== 0 && Math.abs(v) < 1e-3) ? v.toPrecision(3) : v.toPrecision(6)));
+}
+
+// Put the end fields where the axis' top and bottom labels would be and show
+// the current end values in the automatic ones. axes: {L: yAxisIndex, R: yAxisIndex | null}
+function placeYInputs(chart, axes = {L: 0, R: null}) {
+  if (!chart) return;
+  const model = chart.getModel();
+  const grid = model && model.getComponent('grid', 0);
   const rect = grid && grid.coordinateSystem && grid.coordinateSystem.getRect();
-  const shown = !!(rect && rect.height > 0 && chart.getOption().series.length);
-  for (const el of [top, bottom]) el.hidden = !shown;
-  if (!shown) return;
-  const w = Math.max(44, rect.x - 6);
-  for (const el of [top, bottom]) { el.style.width = w + 'px'; el.style.left = '2px'; }
-  top.style.top = Math.max(0, rect.y - 26) + 'px';
-  bottom.style.top = (rect.y + rect.height + 4) + 'px';
+  const hasSeries = !!(rect && rect.height > 0 && chart.getOption().series.length);
+  const total = chart.getWidth();
+  for (const side of ['L', 'R']) {
+    const sfx = side === 'R' ? 'R' : '';
+    const minCtl = document.getElementById('yMinCtl' + sfx), maxCtl = document.getElementById('yMaxCtl' + sfx);
+    if (!minCtl || !maxCtl) continue;
+    const idx = axes[side];
+    const shown = hasSeries && idx !== null && idx !== undefined && !!model.getComponent('yAxis', idx);
+    minCtl.hidden = maxCtl.hidden = !shown;
+    if (!shown) continue;
+    const ext = model.getComponent('yAxis', idx).axis.scale.getExtent();
+    const [minEl, maxEl] = yInputs(side);
+    for (const [el, v] of [[minEl, ext[0]], [maxEl, ext[1]]]) {
+      if (el.dataset.manual !== '1' && document.activeElement !== el) el.value = fmtAxisEnd(v);
+    }
+    const left = side === 'L' ? 0 : rect.x + rect.width + 6;
+    const w = side === 'L' ? Math.max(40, rect.x - 6) : Math.max(40, total - left - 10);
+    for (const ctl of [minCtl, maxCtl]) { ctl.style.width = w + 'px'; ctl.style.left = left + 'px'; }
+    maxCtl.style.top = (rect.y - 11) + 'px';
+    minCtl.style.top = (rect.y + rect.height - 11) + 'px';
+  }
 }
