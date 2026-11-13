@@ -563,6 +563,9 @@ function removeSignal(key) {
 }
 
 function unselectAll() {
+  if (!selectedSignals.size) return;
+  const n = selectedSignals.size;
+  if (!confirm(`Remove all ${n} signal${n === 1 ? '' : 's'} from the chart?`)) return;
   document.querySelectorAll('.chart-var-checkbox:checked').forEach(cb => { cb.checked = false; });
   selectedSignals.clear();
   multipliers.clear();
