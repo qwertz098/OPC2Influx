@@ -24,10 +24,10 @@
           <option value="10000">10 s</option>
         </select>
       </label>
-      <button id="logTimeBtn" class="btn btn-ghost btn-sm" onclick="toggleLogTime()"
-              title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
+      <span class="seg seg-toggle"><button type="button" id="logTimeBtn" class="seg-btn" onclick="toggleLogTime()"
+              title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button></span>
       <span class="scale-ctl" title="Auto Scale: the Y axis follows the data range instead of starting at zero">
-        <span class="text-sm text-muted">⤢ Auto Scale</span>
+        <span class="text-sm text-muted">↕ Auto Scale</span>
         <span class="seg seg-toggle">
           <button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
                   title="Left Y axis: scale to the data range instead of starting at zero">L</button>
@@ -35,8 +35,8 @@
                   title="Right Y axis: scale to the data range instead of starting at zero">R</button>
         </span>
       </span>
-      <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
-              title="Fill the area under each line">▨ Shaded</button>
+      <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
+              title="Fill the area under each line">▨ Shaded</button></span>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
              title="Sliding window: only the most recent data is kept; older points scroll off. ∞ keeps everything (up to the memory cap).">
         Time frame:
@@ -356,8 +356,7 @@ document.addEventListener('visibilitychange', () => {
 function toggleLogTime() {
   logTimeMode = !logTimeMode;
   const btn = document.getElementById('logTimeBtn');
-  btn.style.background  = logTimeMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  btn.style.fontWeight  = logTimeMode ? '600' : '';
+  btn.classList.toggle('active', !!logTimeMode);
   chartInitialized = false;
   renderChart();
 }
@@ -371,8 +370,7 @@ function toggleShaded() {
 }
 function styleShadedBtn() {
   const btn = document.getElementById('shadedBtn');
-  btn.style.background = shadedMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  btn.style.fontWeight = shadedMode ? '600' : '';
+  btn.classList.toggle('active', !!shadedMode);
 }
 
 // ─── Manual Y range ───────────────────────────────────────────────────────────
@@ -757,8 +755,7 @@ function restoreState() {
   document.getElementById('intervalSel').value = state.interval || '1000';
   document.getElementById('maxTimeSel').value  = state.maxTime  || '3600';
   const logBtn = document.getElementById('logTimeBtn');
-  logBtn.style.background = logTimeMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  logBtn.style.fontWeight  = logTimeMode ? '600' : '';
+  logBtn.classList.toggle('active', !!logTimeMode);
   styleScaleBtns();
 
   // Re-check tree checkboxes that match restored signals
@@ -903,8 +900,7 @@ async function loadSelectedView() {
     shadedMode      = !!cfg.shaded;
     styleShadedBtn();
     const logBtn   = document.getElementById('logTimeBtn');
-    logBtn.style.background = logTimeMode   ? 'var(--primary-bg,#e8f0fe)' : '';
-    logBtn.style.fontWeight  = logTimeMode   ? '600' : '';
+    logBtn.classList.toggle('active', !!logTimeMode);
     styleScaleBtns();
 
     chartInitialized = false;
