@@ -73,14 +73,28 @@ class AlertManager:
                 self._on_log("error", "smtp", f"Test email failed: {exc}")
             return str(exc)
 
-    async def _send(self, subject: str, body: str) -> None:
+    async def send_report(self, recipients: list[str], subject: str, text: str, html: str) -> None:
+        """Send a report e-mail to its own recipients; raises on failure."""
+        cfg = effective_smtp(self._cfg)
+        if not cfg.enabled:
+            raise RuntimeError("Email sending is switched off in the settings")
+        if not cfg.host:
+            raise RuntimeError("SMTP is not configured")
+        if not recipients:
+            raise RuntimeError("The report has no recipients")
+        await self._send(subject, text, to=recipients, html=html)
+
+    async def _send(self, subject: str, body: str, to: Optional[list[str]] = None,
+                    html: Optional[str] = None) -> None:
         cfg = effective_smtp(self._cfg)
         msg = MIMEMultipart("alternative")
         prefix = f"[OpcUA2InfluxDB · {self._site_name}]" if self._site_name else "[OpcUA2InfluxDB]"
         msg["Subject"] = f"{prefix} {subject}"
         msg["From"] = cfg.from_address or cfg.username
-        msg["To"] = ", ".join(cfg.to_addresses)
+        msg["To"] = ", ".join(to if to is not None else cfg.to_addresses)
         msg.attach(MIMEText(body, "plain"))
+        if html:
+            msg.attach(MIMEText(html, "html"))   # last part = preferred by mail clients
 
         import aiosmtplib   # ~14 MB, loaded on the first alert mail
         await aiosmtplib.send(

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.config import AlertsConfig, WatchdogConfig, save_alerts
 from app.dependencies import get_state
+from app.reports.scheduler import load_sent
 from app.state import RuntimeState
 
 router = APIRouter(prefix="/config/alerts")
@@ -20,6 +23,12 @@ async def alerts_page(request: Request, state: RuntimeState = Depends(get_state)
         "rules": state.config.alarm_rules.rules,
         "stale_rules": state.config.stale_watchdog.rules,
         "subscriptions": state.config.subscriptions.subscriptions,
+        "reports_cfg": state.config.reports,
+        "reports_json": [r.model_dump() for r in state.config.reports.reports],
+        "report_subs": [{"id": s.id, "label": f"{s.display_name or s.node_id} · {s.influxdb.measurement}"}
+                        for s in state.config.subscriptions.subscriptions],
+        "report_sent": load_sent(),
+        "machine_time": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z (UTC%z)"),
     })
 
 

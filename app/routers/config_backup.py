@@ -15,7 +15,7 @@ CONFIG_FILES = [
     "servers.yaml", "subscriptions.yaml", "influxdb.yaml",
     "alerts.yaml", "sqlite_targets.yaml", "tags.yaml",
     "alarm_rules.yaml", "stale_watchdog.yaml", "saved_charts.yaml", "dynamic_folders.yaml",
-    "app_settings.yaml",
+    "app_settings.yaml", "reports.yaml",
 ]
 
 

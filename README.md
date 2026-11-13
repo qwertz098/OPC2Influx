@@ -461,7 +461,7 @@ Node-attribute tags are resolved once per polling cycle from the node's OPC UA a
 
 ## Alerts
 
-The Alerts page (**Watchdog & Alarm Rules**) covers two independent mechanisms:
+The Alerts page (**Watchdog & Alarm Rules**) covers the watchdog, alarm rules, the stale value watchdog and periodic reports:
 
 ### Watchdog
 
@@ -472,6 +472,21 @@ The watchdog monitors the gap between data writes and triggers an email alert wh
 Define threshold conditions on any subscribed signal (e.g. `TotalPower_kW > 100`). When the condition becomes true the alarm activates; when it clears the alarm deactivates. Active alarms are shown on the Dashboard.
 
 Email notifications for both Watchdog and Alarm Rules are sent via the SMTP config in **Settings** (see below).
+
+### Reports
+
+Daily, weekly and monthly e-mails with figures of selected signals from InfluxDB, set up at the bottom of the Alerts page. Each report has its own name, signals, periods and recipients.
+
+| Kind | Figures |
+|---|---|
+| **Value** (e.g. power) | time-weighted mean and its change to the period before, minimum and maximum with their time, optionally the **energy** = value × hours (with a factor, e.g. `0.001` for W → kWh) and its change |
+| **Counter** (e.g. an energy meter) | reading at the end of the period, reading at the last report, and the difference |
+
+- **When:** at the send time (default `00:15`) after the end of a period: daily for the day before, weekly on Monday for the week before (Mon–Sun), monthly on the 1st for the month before. If the gateway was off at that time, the report goes out when it runs again; nothing is sent twice. A new report starts with the next period.
+- **Time base:** local time of the machine or UTC. In Docker the container runs on UTC unless the `TZ` variable is set, e.g. `TZ=Europe/Berlin`.
+- **Values written on change:** a value holds until the next one, so mean and energy weight each value by how long it held, and a value that has not changed for a long time still counts.
+- **Preview** shows the report of the last completed period in the browser; **Send now** mails it right away without changing the schedule.
+- Sending uses the SMTP settings (see below); what was sent is kept in `reports_state.json` in the data directory.
 
 ---
 

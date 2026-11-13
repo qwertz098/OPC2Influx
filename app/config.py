@@ -437,6 +437,38 @@ class AppSettingsConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Periodic e-mail reports
+# ---------------------------------------------------------------------------
+
+class ReportSignalConfig(BaseModel):
+    subscription_id: str
+    # gauge: time-weighted mean, min, max (optionally energy = value over time)
+    # counter: meter reading at the period end and the change since the last report
+    kind: Literal["gauge", "counter"] = "gauge"
+    unit: str = ""                  # shown after the values, e.g. kW
+    energy: bool = False            # gauge only: also report value × hours
+    energy_factor: float = 1.0      # value·h × factor, e.g. 0.001 for W → kWh
+    energy_unit: str = "kWh"
+
+
+class ReportConfig(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    name: str = "Report"
+    enabled: bool = True
+    daily: bool = True
+    weekly: bool = False
+    monthly: bool = False
+    recipients: list[str] = []
+    signals: list[ReportSignalConfig] = []
+
+
+class ReportsConfig(BaseModel):
+    send_time: str = "00:15"                     # HH:MM after the end of a period
+    timezone: Literal["local", "utc"] = "local"  # period boundaries: machine time or UTC
+    reports: list[ReportConfig] = []
+
+
+# ---------------------------------------------------------------------------
 # Aggregate app config
 # ---------------------------------------------------------------------------
 
@@ -452,6 +484,7 @@ class AppConfig(BaseModel):
     saved_charts: SavedChartsConfig = Field(default_factory=SavedChartsConfig)
     dynamic_folders: DynamicFoldersConfig = Field(default_factory=DynamicFoldersConfig)
     app_settings: AppSettingsConfig = Field(default_factory=AppSettingsConfig)
+    reports: ReportsConfig = Field(default_factory=ReportsConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +510,12 @@ def load_config(config_dir: Path) -> AppConfig:
         saved_charts=_load_model(SavedChartsConfig, d / "saved_charts.yaml"),
         dynamic_folders=_load_model(DynamicFoldersConfig, d / "dynamic_folders.yaml"),
         app_settings=_load_model(AppSettingsConfig, d / "app_settings.yaml"),
+        reports=_load_model(ReportsConfig, d / "reports.yaml"),
     )
+
+
+def save_reports(config: ReportsConfig, config_dir: Path) -> None:
+    _save_yaml(config_dir / "reports.yaml", config.model_dump())
 
 
 def save_app_settings(config: AppSettingsConfig, config_dir: Path) -> None:

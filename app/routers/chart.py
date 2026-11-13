@@ -21,6 +21,7 @@ from app.config import (
     save_saved_charts,
 )
 from app.dependencies import get_state
+from app.influxdb.flux import field_filter, flux_str
 from app.opcua.browser import get_children
 from app.state import RuntimeState
 
@@ -68,8 +69,7 @@ async def history_page(request: Request, state: RuntimeState = Depends(get_state
 _HISTORY_MAX_POINTS = 5000
 
 
-def _flux_str(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+_flux_str = flux_str
 
 
 def history_flux(bucket: str, measurement: str, field: str, type_suffix: bool,
@@ -81,17 +81,12 @@ def history_flux(bucket: str, measurement: str, field: str, type_suffix: bool,
     series of the measurement (different tag sets) are merged into one line.
     Result rows carry the columns _time, mean, min and max.
     """
-    if type_suffix:
-        pattern = re.escape(field).replace("/", "\\/")
-        field_filter = f"r._field =~ /^{pattern}(_float|_integer|_bool)?$/"
-    else:
-        field_filter = f"r._field == {_flux_str(field)}"
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     window = f'every: {every_s}s, createEmpty: false, timeSrc: "_start"'
     return (
         f"data = from(bucket: {_flux_str(bucket)})\n"
         f"  |> range(start: {start.strftime(fmt)}, stop: {stop.strftime(fmt)})\n"
-        f"  |> filter(fn: (r) => r._measurement == {_flux_str(measurement)} and {field_filter})\n"
+        f"  |> filter(fn: (r) => r._measurement == {_flux_str(measurement)} and {field_filter(field, type_suffix)})\n"
         f"  |> toFloat()\n"
         f"  |> group()\n"
         f'  |> sort(columns: ["_time"])\n'
