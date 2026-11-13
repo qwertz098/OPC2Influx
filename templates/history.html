@@ -58,10 +58,15 @@
           {% for t in influx_targets %}<option value="{{ t.id }}">{{ t.display_name }}</option>{% endfor %}
         </select>
       </label>
-      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('L')"
-              title="Left Y axis: scale to the data range instead of starting from zero">⤢ Auto Scale L</button>
-      <button id="autoScaleBtnR" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('R')" style="margin-left:-6px"
-              title="Right Y axis: scale to the data range instead of starting from zero">R</button>
+      <span class="scale-ctl" title="Auto Scale: the Y axis follows the data range instead of starting at zero">
+        <span class="text-sm text-muted">⤢ Auto Scale</span>
+        <span class="seg seg-toggle">
+          <button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
+                  title="Left Y axis: scale to the data range instead of starting at zero">L</button>
+          <button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
+                  title="Right Y axis: scale to the data range instead of starting at zero">R</button>
+        </span>
+      </span>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each mean line">▨ Shaded</button>
       <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
@@ -580,8 +585,8 @@ function setMultiplier(key, val) {
 }
 
 function styleScaleBtns() {
-  styleToggle(document.getElementById('autoScaleBtn'), autoScaleMode);
-  styleToggle(document.getElementById('autoScaleBtnR'), autoScaleR);
+  document.getElementById('autoScaleBtn').classList.toggle('active', autoScaleMode);
+  document.getElementById('autoScaleBtnR').classList.toggle('active', autoScaleR);
 }
 function toggleAutoScale(side) {
   if (side === 'R') autoScaleR = !autoScaleR; else autoScaleMode = !autoScaleMode;

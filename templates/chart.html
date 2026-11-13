@@ -26,10 +26,15 @@
       </label>
       <button id="logTimeBtn" class="btn btn-ghost btn-sm" onclick="toggleLogTime()"
               title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
-      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('L')"
-              title="Left Y axis: scale to the data range instead of starting from zero">⤢ Auto Scale L</button>
-      <button id="autoScaleBtnR" class="btn btn-ghost btn-sm" onclick="toggleAutoScale('R')" style="margin-left:-6px"
-              title="Right Y axis: scale to the data range instead of starting from zero">R</button>
+      <span class="scale-ctl" title="Auto Scale: the Y axis follows the data range instead of starting at zero">
+        <span class="text-sm text-muted">⤢ Auto Scale</span>
+        <span class="seg seg-toggle">
+          <button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
+                  title="Left Y axis: scale to the data range instead of starting at zero">L</button>
+          <button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
+                  title="Right Y axis: scale to the data range instead of starting at zero">R</button>
+        </span>
+      </span>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each line">▨ Shaded</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
@@ -386,11 +391,8 @@ function toggleAutoScale(side) {
   saveState();
 }
 function styleScaleBtns() {
-  for (const [id, on] of [['autoScaleBtn', autoScaleMode], ['autoScaleBtnR', autoScaleR]]) {
-    const btn = document.getElementById(id);
-    btn.style.background = on ? 'var(--primary-bg,#e8f0fe)' : '';
-    btn.style.fontWeight = on ? '600' : '';
-  }
+  document.getElementById('autoScaleBtn').classList.toggle('active', autoScaleMode);
+  document.getElementById('autoScaleBtnR').classList.toggle('active', autoScaleR);
 }
 
 // ─── Poll ─────────────────────────────────────────────────────────────────────
