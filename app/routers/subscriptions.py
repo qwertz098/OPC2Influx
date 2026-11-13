@@ -173,6 +173,9 @@ async def update_subscription(sub_id: str, request: Request, state: RuntimeState
         "all_tags": all_tags,
         "tag_cache": tag_cache,
         "stripped_measurement": stripped_measurement,
+        "server_map": {s.id: s.display_name for s in state.config.servers.servers},
+        "folder_map": {f.id: f for f in state.config.dynamic_folders.folders},
+        "server_status": state.server_status,
     })
 
 

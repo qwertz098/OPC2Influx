@@ -73,6 +73,13 @@ const INTERVAL_MS = CFG.interval_ms || 1000;
 const MAX_SEC = CFG.max_time_seconds || 0;
 const LOG_TIME = !!CFG.log_time_mode;
 const AUTO_SCALE = !!CFG.auto_scale_mode;
+const AUTO_SCALE_R = !!CFG.auto_scale_right;   // right Y axis
+// Fixed Y axis limits of the saved view (null = automatic)
+const Y_MIN = typeof CFG.y_min === 'number' ? CFG.y_min : null;
+const Y_MAX = typeof CFG.y_max === 'number' ? CFG.y_max : null;
+const Y2_MIN = typeof CFG.y2_min === 'number' ? CFG.y2_min : null;   // right axis
+const Y2_MAX = typeof CFG.y2_max === 'number' ? CFG.y2_max : null;
+const RIGHT_AXIS = SIGNALS.some(s => s.axis === 'R');
 const MAX_PTS = 2000;
 
 SIGNALS.forEach((s, i) => { if (!s.color) s.color = COLORS[i % COLORS.length]; });
@@ -109,6 +116,7 @@ function buildSeries() {
     seriesKeys.push(key);
     return {
       id: key, name: sigLabel(s), type: 'line', showSymbol: false,
+      yAxisIndex: s.axis === 'R' ? 1 : 0,
       lineStyle: {color: s.color, width: 1.5}, itemStyle: {color: s.color},
       areaStyle: SHADED ? { color: s.color, opacity: 0.12 } : undefined,
       data,
@@ -219,11 +227,13 @@ function initChart() {
   chart.setOption({
     animation: false,
     backgroundColor: 'transparent',
-    grid: { left: 60, right: 16, top: 16, bottom: 36 },
+    grid: { left: 60, right: RIGHT_AXIS ? 60 : 16, top: 16, bottom: 36 },
     tooltip: themedTooltip(T, { trigger: 'axis', axisPointer: {type:'cross'}, formatter: tooltipFormatter }),
     legend: { show: false },
     xAxis: themedAxis(T, xAxis),
-    yAxis: themedAxis(T, { type: 'value', axisLine: {show:true}, scale: AUTO_SCALE, splitNumber: ySplits }),
+    yAxis: [themedAxis(T, { type: 'value', axisLine: {show:true}, scale: AUTO_SCALE, splitNumber: ySplits, min: Y_MIN, max: Y_MAX })]
+      .concat(RIGHT_AXIS ? [themedAxis(T, { type: 'value', position: 'right', axisLine: {show:true}, scale: AUTO_SCALE_R,
+                                            splitNumber: ySplits, min: Y2_MIN, max: Y2_MAX, splitLine: {show: false} })] : []),
     series: buildSeries(),
   }, true);
 }

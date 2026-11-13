@@ -14,34 +14,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _as_bool(raw) -> bool:
+    if isinstance(raw, (bool, int, float)):
+        return bool(raw)
+    return str(raw).strip().lower() in ("true", "1", "yes")
+
+
 def _evaluate(raw, condition: str, threshold_str: str) -> bool:
-    """Return True if the alarm condition is met."""
+    """Return True if the alarm condition is met.
+
+    Booleans count as 1 (true) and 0 (false), so a bool signal works with a
+    threshold of true/false as well as 1/0, and with every condition:
+    "> 0", "= true" and "<> false" all fire while the signal is true.
+    """
     t = threshold_str.strip().lower()
 
-    # Boolean comparison
     if t in ("true", "false"):
-        bool_thresh = t == "true"
-        if isinstance(raw, bool):
-            val = raw
-        elif isinstance(raw, (int, float)):
-            val = bool(raw)
-        else:
-            val = str(raw).strip().lower() in ("true", "1", "yes")
-        if condition == "=":
-            return val == bool_thresh
-        if condition == "<>":
-            return val != bool_thresh
-        return False
-
-    # Numeric comparison
-    try:
-        num_thresh = float(t)
-        if isinstance(raw, bool):
-            num_val = float(raw)
-        else:
-            num_val = float(raw)
-    except (TypeError, ValueError):
-        return False
+        # Bool threshold: any non-zero number or "true"/"1"/"yes" counts as true
+        num_thresh = 1.0 if t == "true" else 0.0
+        num_val = 1.0 if _as_bool(raw) else 0.0
+    else:
+        try:
+            num_thresh = float(t)
+            if isinstance(raw, str) and raw.strip().lower() in ("true", "false"):
+                num_val = 1.0 if raw.strip().lower() == "true" else 0.0
+            else:
+                num_val = float(raw)   # bool → 1.0 / 0.0
+        except (TypeError, ValueError):
+            return False
 
     if condition == "<":
         return num_val < num_thresh

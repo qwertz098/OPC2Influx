@@ -1,0 +1,11 @@
+{# Y axis end fields: they take the place of the top and bottom labels of the
+   left (L) and right (R) Y axis. Placed by placeYInputs() in chart_common.js. #}
+{% for side in ['', 'R'] %}
+{% for end in ['Max', 'Min'] %}
+<div class="y-axis-ctl" id="y{{ end }}Ctl{{ side }}" hidden>
+  <input id="y{{ end }}Inp{{ side }}" class="input y-axis-inp" type="number" step="any" readonly
+         onmousedown="yManualOn(this)" onchange="onYRangeChange()" onkeydown="if(event.key==='Enter')this.blur()">
+  <button type="button" class="y-auto-btn" onclick="yManualOff('y{{ end }}Inp{{ side }}')" title="Back to automatic">×</button>
+</div>
+{% endfor %}
+{% endfor %}

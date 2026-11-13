@@ -44,7 +44,7 @@
   <div class="card-body" style="padding:.75rem 1rem">
 
     {% if rules %}
-    <table class="table" style="margin-bottom:1rem">
+    <table class="table fit-table" style="margin-bottom:1rem">
       <thead>
         <tr>
           <th>Name</th>
@@ -64,10 +64,11 @@
         {% set sub = matched[0] if matched else None %}
         <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
           <td>{{ rule.name or '—' }}</td>
-          <td class="text-sm">
+          <td class="text-sm fit">
             {% if sub %}
-              <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
-              <span class="text-muted text-xs"> · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</span>
+              {% set sig_path = sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name %}
+              <div class="ellipsis" title="{{ sub.display_name or sub.node_id }}&#10;{{ sig_path }}&#10;ID {{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</div>
+              <div class="ellipsis text-muted text-xs" title="{{ sig_path }}">{{ sig_path }}</div>
             {% else %}
               <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
             {% endif %}
@@ -95,7 +96,7 @@
               {{ 'Active' if rule.enabled else 'Disabled' }}
             </span>
           </td>
-          <td class="actions">
+          <td><div class="actions">
             <button type="button" class="btn btn-ghost btn-xs"
                     onclick="alarmRuleEdit('{{ rule.id }}')">Edit</button>
             <form action="/config/alarm-rules/{{ rule.id }}/toggle" method="post" style="display:inline">
@@ -105,7 +106,7 @@
                   onsubmit="return confirm('Delete this alarm rule?')">
               <button class="btn btn-danger btn-xs">Delete</button>
             </form>
-          </td>
+          </div></td>
         </tr>
         <tr><td id="alarm-edit-cell-{{ rule.id }}" colspan="9" style="padding:0;border:0"></td></tr>
         {% endfor %}
@@ -165,6 +166,7 @@
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add Rule</button>
+        <span class="info-icon" title="Every second the signal's latest polled value is compared with Value.&#10;&#10;Condition: &lt; less than · = equal · &gt; greater than · &lt;&gt; not equal&#10;Value: a number (e.g. 4.9) or true / false&#10;&#10;Bool signals count as 1 (true) and 0 (false).&#10;Alarm while true: = true, = 1, &gt; 0 or &lt;&gt; false&#10;Alarm while false: = false, = 0 or &lt; 1&#10;&#10;Delay: the condition must hold this long without a break before the alarm fires (0 = at once). Filters short spikes.&#10;Once (latch): fires once when the condition becomes true and again only after it has cleared. Cooldown is not used.&#10;Without latch (repeat): fires again every Cooldown seconds while the condition holds.&#10;Send email: also sends an email via the SMTP settings. Every alarm is listed under Events on the dashboard.&#10;&#10;No value yet (server offline, never polled): the rule does nothing."><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
       </div>
     </form>
   </div>
@@ -181,7 +183,7 @@
     </p>
 
     {% if stale_rules %}
-    <table class="table" style="margin-bottom:1rem">
+    <table class="table fit-table" style="margin-bottom:1rem">
       <thead>
         <tr>
           <th>Name</th>
@@ -199,10 +201,11 @@
         {% set sub = matched[0] if matched else None %}
         <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
           <td>{{ rule.name or '—' }}</td>
-          <td class="text-sm">
+          <td class="text-sm fit">
             {% if sub %}
-              <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
-              <span class="text-muted text-xs"> · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</span>
+              {% set sig_path = sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name %}
+              <div class="ellipsis" title="{{ sub.display_name or sub.node_id }}&#10;{{ sig_path }}&#10;ID {{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</div>
+              <div class="ellipsis text-muted text-xs" title="{{ sig_path }}">{{ sig_path }}</div>
             {% else %}
               <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
             {% endif %}
@@ -219,7 +222,7 @@
               {{ 'Active' if rule.enabled else 'Disabled' }}
             </span>
           </td>
-          <td class="actions">
+          <td><div class="actions">
             <button type="button" class="btn btn-ghost btn-xs"
                     onclick="staleRuleEdit('{{ rule.id }}')">Edit</button>
             <form action="/config/stale-watchdog/{{ rule.id }}/toggle" method="post" style="display:inline">
@@ -229,7 +232,7 @@
                   onsubmit="return confirm('Delete this stale-value watchdog rule?')">
               <button class="btn btn-danger btn-xs">Delete</button>
             </form>
-          </td>
+          </div></td>
         </tr>
         <tr><td id="stale-edit-cell-{{ rule.id }}" colspan="7" style="padding:0;border:0"></td></tr>
         {% endfor %}
@@ -275,6 +278,7 @@
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add Rule</button>
+        <span class="info-icon" title="Fires when the signal's value has not changed for the whole window.&#10;Suppress when server disconnected: no stale alarm while the server is offline; the Watchdog already reports that.&#10;Send email: also sends an email via the SMTP settings."><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
       </div>
     </form>
   </div>

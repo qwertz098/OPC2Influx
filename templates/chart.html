@@ -13,7 +13,6 @@
       <button id="startBtn"  class="btn btn-primary btn-sm" onclick="startCharting()">▶ Start</button>
       <button id="pauseBtn"  class="btn btn-secondary btn-sm" onclick="togglePause()" style="display:none">⏸ Pause</button>
       <button id="clearBtn"  class="btn btn-danger btn-sm"  onclick="clearCharting()" style="display:none">■ Clear</button>
-      <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem">
         Interval:
         <select id="intervalSel" class="input input-sm" style="width:auto;padding:.15rem .4rem">
@@ -24,12 +23,6 @@
           <option value="10000">10 s</option>
         </select>
       </label>
-      <button id="logTimeBtn" class="btn btn-ghost btn-sm" onclick="toggleLogTime()"
-              title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
-      <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
-              title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
-      <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
-              title="Fill the area under each line">▨ Shaded</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
              title="Sliding window: only the most recent data is kept; older points scroll off. ∞ keeps everything (up to the memory cap).">
         Time frame:
@@ -45,15 +38,24 @@
           <option value="604800">7 d</option>
         </select>
       </label>
+      <span class="seg seg-toggle"><button type="button" id="logTimeBtn" class="seg-btn" onclick="toggleLogTime()"
+              title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button></span>
+      <span class="seg seg-toggle"><button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
+              title="Left Y axis: scale to the data range instead of starting at zero">↕ Auto L</button></span>
+      <span class="seg seg-toggle"><button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
+              title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
+      <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
+              title="Fill the area under each line">▨ Shaded</button></span>
+      <button class="btn btn-tool btn-sm" onclick="unselectAll()">✕ Unselect All</button>
       <span id="statusMsg" class="text-sm text-muted" style="margin-left:auto"></span>
-      <button class="btn btn-ghost btn-sm" onclick="saveView()" title="Save current signals and settings as a named view">Save view</button>
+      <button class="btn btn-tool btn-sm" onclick="saveView()" title="Save current signals and settings as a named view">Save view</button>
       <div style="display:flex;align-items:center;gap:.3rem">
         <select id="loadViewSel" class="input input-sm" style="width:auto;padding:.15rem .4rem;max-width:160px" onchange="_onViewSelChange()">
           <option value="">Select…</option>
         </select>
-        <button id="loadViewBtn"   class="btn btn-ghost btn-sm" onclick="loadSelectedView()"   title="Load selected view"                         disabled>Load</button>
-        <button id="deleteViewBtn" class="btn btn-ghost btn-sm" onclick="deleteSelectedView()" title="Delete selected view" style="color:var(--red,#ef4444)" disabled>✕</button>
-        <button id="openEmbedBtn"  class="btn btn-ghost btn-sm" onclick="openEmbedView()"      title="Open the selected saved view as an embed in a new tab (select a saved view first)" disabled>↗</button>
+        <button id="loadViewBtn"   class="btn btn-tool btn-sm" onclick="loadSelectedView()"   title="Load selected view"                         disabled>Load</button>
+        <button id="deleteViewBtn" class="btn btn-danger btn-sm" onclick="deleteSelectedView()" title="Delete selected view" disabled>✕</button>
+        <button id="openEmbedBtn"  class="btn btn-tool btn-sm" onclick="openEmbedView()"      title="Open the selected saved view as an embed in a new tab (select a saved view first)" disabled>↗</button>
         <span class="info-icon" title="Embed view appearance: add parameters joined by +&#10;Scheme: dark (default), light, medium, solarized-light, solarized-dark, system&#10;Look: studio (default), mono, contrast&#10;shaded: fill the area under the lines&#10;Example: /chart/embed/{id}/light+contrast+shaded"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
       </div>
     </div>
@@ -151,11 +153,14 @@
 
   <!-- Right: ECharts live chart -->
   <div class="card">
+    <div class="chart-wrap">
+      {% include "partials/y_axis_fields.html" %}
     <div id="chart-area" style="width:100%;height:calc(100vh - 300px);min-height:320px">
       <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
            height:100%;color:var(--text-muted);font-size:.9rem">
         Select signals from the tree, then press Start.
       </div>
+    </div>
     </div>
     <!-- Legend: one row per signal -->
     <div id="chart-legend" style="padding:.5rem 1rem;border-top:1px solid var(--border);display:none"></div>
@@ -181,11 +186,14 @@ let running          = false;
 let paused           = false;
 let polling          = false;
 let logTimeMode      = false;
-let autoScaleMode    = false;
+let autoScaleMode    = false;   // left Y axis
+let autoScaleR       = false;   // right Y axis
 let shadedMode         = false;
 let chartInitialized = false;
 let pollingTimer     = null;
 let startedAt        = null;
+let lastPollAt       = null;   // browser time of the last successful poll
+let serverOffsetMs   = 0;      // server clock − browser clock (from the HTTP Date header)
 let chart            = null;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -245,6 +253,9 @@ function removeSignal(key) {
 }
 
 function unselectAll() {
+  if (!selectedSignals.size) return;
+  const n = selectedSignals.size;
+  if (!confirm(`Remove all ${n} signal${n === 1 ? '' : 's'} from the chart?`)) return;
   // Stop a running chart first — otherwise the poll timer keeps running and
   // the toolbar stays in its "Running…" state with no signals selected.
   if (running) clearCharting();
@@ -271,6 +282,7 @@ function startCharting() {
   running   = true;
   paused    = false;
   startedAt = Date.now();
+  lastPollAt = null;
   const ms  = parseInt(document.getElementById('intervalSel').value);
   pollingTimer = setInterval(pollAndRender, ms);
   pollAndRender();
@@ -287,6 +299,7 @@ function clearCharting(reason) {
   running   = false;
   paused    = false;
   startedAt = null;
+  lastPollAt = null;
   for (const key of buffers.keys()) buffers.set(key, []);
   chartInitialized = false;
   renderChart();
@@ -341,8 +354,7 @@ document.addEventListener('visibilitychange', () => {
 function toggleLogTime() {
   logTimeMode = !logTimeMode;
   const btn = document.getElementById('logTimeBtn');
-  btn.style.background  = logTimeMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  btn.style.fontWeight  = logTimeMode ? '600' : '';
+  btn.classList.toggle('active', !!logTimeMode);
   chartInitialized = false;
   renderChart();
 }
@@ -356,18 +368,27 @@ function toggleShaded() {
 }
 function styleShadedBtn() {
   const btn = document.getElementById('shadedBtn');
-  btn.style.background = shadedMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  btn.style.fontWeight = shadedMode ? '600' : '';
+  btn.classList.toggle('active', !!shadedMode);
+}
+
+// ─── Manual Y range ───────────────────────────────────────────────────────────
+function onYRangeChange() {
+  chartInitialized = false;
+  renderChart();
+  saveState();
 }
 
 // ─── Auto scale toggle ────────────────────────────────────────────────────────
-function toggleAutoScale() {
-  autoScaleMode = !autoScaleMode;
-  const btn = document.getElementById('autoScaleBtn');
-  btn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  btn.style.fontWeight = autoScaleMode ? '600' : '';
+function toggleAutoScale(side) {
+  if (side === 'R') autoScaleR = !autoScaleR; else autoScaleMode = !autoScaleMode;
+  styleScaleBtns();
   chartInitialized = false;
   renderChart();
+  saveState();
+}
+function styleScaleBtns() {
+  document.getElementById('autoScaleBtn').classList.toggle('active', autoScaleMode);
+  document.getElementById('autoScaleBtnR').classList.toggle('active', autoScaleR);
 }
 
 // ─── Poll ─────────────────────────────────────────────────────────────────────
@@ -390,6 +411,14 @@ async function pollAndRender() {
     // Stamp with the browser's clock: the server's clock may differ (e.g. a gateway
     // without NTP), and the chart compares points against the browser's "now".
     const receivedAt = Date.now();
+    const serverDate = Date.parse(resp.headers.get('Date') || '');
+    if (isFinite(serverDate)) serverOffsetMs = serverDate - receivedAt;
+    // Missed polls (background tab, other page in this tab): fill the gap from InfluxDB
+    const intervalMs = parseInt(document.getElementById('intervalSel').value);
+    if (lastPollAt && receivedAt - lastPollAt > Math.max(3 * intervalMs, 5000)) {
+      backfillGap(lastPollAt, receivedAt, intervalMs);
+    }
+    lastPollAt = receivedAt;
     for (const r of results) {
       const key = sigKey(r.server_id, r.node_id);
       if (r.v === null || !buffers.has(key)) continue;
@@ -409,10 +438,53 @@ async function pollAndRender() {
   }
 }
 
+// ─── Gap backfill ─────────────────────────────────────────────────────────────
+// The browser throttles or stops polling while the tab is hidden or another page
+// is open. Recorded values for that time come from InfluxDB (subscribed signals
+// only) and are inserted into the buffers; their timestamps are shifted from the
+// server's clock to the browser's, like the live points.
+async function backfillGap(fromMs, toMs, intervalMs) {
+  const keys = Array.from(selectedSignals.keys());
+  const points = Math.max(10, Math.min(2000, Math.round((toMs - fromMs) / intervalMs)));
+  try {
+    const resp = await fetch('/chart/history/data', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        signals: keys.map(k => selectedSignals.get(k)).map(s => ({server_id: s.server_id, node_id: s.node_id})),
+        from: Math.round(fromMs + serverOffsetMs), to: Math.round(toMs + serverOffsetMs), points,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) return;   // no InfluxDB: the gap stays
+    let filled = 0;
+    for (const s of data.signals || []) {
+      const key = sigKey(s.server_id, s.node_id);
+      const buf = buffers.get(key);
+      if (!buf || !s.points.length) continue;
+      const pts = s.points
+        .map(([t, mean]) => ({t: t - serverOffsetMs, v: mean}))
+        .filter(p => p.t > fromMs && p.t < toMs && p.v !== null);
+      if (!pts.length) continue;
+      // Insert in time order, before the first live point after the gap
+      let i = buf.findIndex(p => p.t >= toMs);
+      if (i < 0) i = buf.length;
+      buf.splice(i, 0, ...pts);
+      if (buf.length > MAX_PTS) decimateBuffer(buf);
+      filled += pts.length;
+    }
+    if (filled) {
+      updateSeriesData();
+      setStatus('Filled a gap of ' + Math.round((toMs - fromMs) / 1000) + ' s from InfluxDB');
+    }
+  } catch (e) { /* best effort: keep the gap */ }
+}
+
 // ─── Render ───────────────────────────────────────────────────────────────────
 function getOrInitChart() {
   if (!chart) {
     chart = echarts.init(document.getElementById('chart-area'));
+    chart.on('finished', () => placeYInputs(chart, {L: 0, R: usesRightAxis(selectedSignals) ? 1 : null}));
     window.addEventListener('resize', () => chart.resize());
   }
   return chart;
@@ -437,6 +509,7 @@ function buildSeries() {
       name: sigLabel(sig),
       type: 'line',
       showSymbol: false,
+      yAxisIndex: sigSide(sig) === 'R' ? 1 : 0,
       lineStyle: {color: sig.color, width: 1.5},
       itemStyle: {color: sig.color},
       areaStyle: shadedMode ? {color: sig.color, opacity: 0.12} : undefined,
@@ -489,9 +562,15 @@ function initChart() {
   };
 
   const colors = chartColors();
+  const right = usesRightAxis(selectedSignals);
+  const yAxes = [themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode,
+                                     ...yLimits('L'), axisLabel: {showMinLabel: false, showMaxLabel: false}})];
+  if (right) yAxes.push(themedAxis(colors, {type: 'value', position: 'right', axisLine: {show: true},
+                                            scale: autoScaleR, ...yLimits('R'), splitLine: {show: false},
+                                            axisLabel: {showMinLabel: false, showMaxLabel: false}}));
   c.setOption({
     animation: false,
-    grid: {left: 60, right: 20, top: 40, bottom: 40},
+    grid: {left: 60, right: right ? 60 : 20, top: 40, bottom: 40},
     tooltip: themedTooltip(colors, {
       trigger: 'axis',
       axisPointer: {type: 'cross'},
@@ -499,7 +578,7 @@ function initChart() {
     }),
     legend: {show: false},
     xAxis: themedAxis(colors, xAxis),
-    yAxis: themedAxis(colors, {type: 'value', axisLine: {show: true}, scale: autoScaleMode}),
+    yAxis: yAxes,
     series: buildSeries(),
   }, true);   // notMerge=true: full reset (only on structural changes)
 
@@ -557,6 +636,9 @@ function buildLegend() {
     nameEl.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem';
     nameEl.textContent = sigLabel(sig);
     row.appendChild(nameEl);
+
+    // Y axis of this signal: left or right
+    row.appendChild(axisPicker(sig, () => { chartInitialized = false; renderChart(); saveState(); }));
 
     // Actual value — updated in-place by updateLegendValues()
     const valEl = document.createElement('span');
@@ -635,8 +717,11 @@ function saveState() {
     paused,
     logTimeMode,
     autoScaleMode,
+    autoScaleR,
+    yRange: readYRanges(),
     shadedMode,
     startedAt,
+    lastPollAt,
     interval: document.getElementById('intervalSel').value,
     maxTime:  document.getElementById('maxTimeSel').value,
   };
@@ -651,6 +736,7 @@ function restoreState() {
   try { state = JSON.parse(raw); } catch { return; }
   shadedMode = !!state.shadedMode;   // display preference, kept even without signals
   styleShadedBtn();
+  if (state.yRange) setYRanges(state.yRange);
   if (!state.signals || !state.signals.length) return;
 
   // Restore Maps
@@ -659,17 +745,16 @@ function restoreState() {
   multipliers     = new Map(state.multipliers || []);
   logTimeMode     = !!state.logTimeMode;
   autoScaleMode   = !!state.autoScaleMode;
+  autoScaleR      = !!state.autoScaleR;
   startedAt       = state.startedAt || null;
+  lastPollAt      = state.running && !state.paused ? state.lastPollAt || null : null;
 
   // Restore UI controls
   document.getElementById('intervalSel').value = state.interval || '1000';
   document.getElementById('maxTimeSel').value  = state.maxTime  || '3600';
   const logBtn = document.getElementById('logTimeBtn');
-  logBtn.style.background = logTimeMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  logBtn.style.fontWeight  = logTimeMode ? '600' : '';
-  const scaleBtn = document.getElementById('autoScaleBtn');
-  scaleBtn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
-  scaleBtn.style.fontWeight  = autoScaleMode ? '600' : '';
+  logBtn.classList.toggle('active', !!logTimeMode);
+  styleScaleBtns();
 
   // Re-check tree checkboxes that match restored signals
   for (const [key] of selectedSignals) {
@@ -763,6 +848,11 @@ async function saveView() {
     max_time_seconds: parseInt(document.getElementById('maxTimeSel').value),
     log_time_mode: logTimeMode,
     auto_scale_mode: autoScaleMode,
+    auto_scale_right: autoScaleR,
+    y_min: readYRange('L').min,
+    y_max: readYRange('L').max,
+    y2_min: readYRange('R').min,
+    y2_max: readYRange('R').max,
     shaded: shadedMode,
     multipliers: mul,
   };
@@ -803,14 +893,13 @@ async function loadSelectedView() {
     document.getElementById('maxTimeSel').value  = String(cfg.max_time_seconds || 3600);
     logTimeMode   = !!cfg.log_time_mode;
     autoScaleMode = !!cfg.auto_scale_mode;
+    autoScaleR    = !!cfg.auto_scale_right;
+    setYRanges({L: {min: cfg.y_min, max: cfg.y_max}, R: {min: cfg.y2_min, max: cfg.y2_max}});
     shadedMode      = !!cfg.shaded;
     styleShadedBtn();
     const logBtn   = document.getElementById('logTimeBtn');
-    logBtn.style.background = logTimeMode   ? 'var(--primary-bg,#e8f0fe)' : '';
-    logBtn.style.fontWeight  = logTimeMode   ? '600' : '';
-    const scaleBtn = document.getElementById('autoScaleBtn');
-    scaleBtn.style.background = autoScaleMode ? 'var(--primary-bg,#e8f0fe)' : '';
-    scaleBtn.style.fontWeight  = autoScaleMode ? '600' : '';
+    logBtn.classList.toggle('active', !!logTimeMode);
+    styleScaleBtns();
 
     chartInitialized = false;
     renderChart();
