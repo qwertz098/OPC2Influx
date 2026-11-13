@@ -24,14 +24,6 @@
           <option value="10000">10 s</option>
         </select>
       </label>
-      <span class="seg seg-toggle"><button type="button" id="logTimeBtn" class="seg-btn" onclick="toggleLogTime()"
-              title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button></span>
-      <span class="seg seg-toggle"><button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
-              title="Left Y axis: scale to the data range instead of starting at zero">↕ Auto L</button></span>
-      <span class="seg seg-toggle"><button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
-              title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
-      <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
-              title="Fill the area under each line">▨ Shaded</button></span>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
              title="Sliding window: only the most recent data is kept; older points scroll off. ∞ keeps everything (up to the memory cap).">
         Time frame:
@@ -47,6 +39,14 @@
           <option value="604800">7 d</option>
         </select>
       </label>
+      <span class="seg seg-toggle"><button type="button" id="logTimeBtn" class="seg-btn" onclick="toggleLogTime()"
+              title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button></span>
+      <span class="seg seg-toggle"><button type="button" id="autoScaleBtn" class="seg-btn" onclick="toggleAutoScale('L')"
+              title="Left Y axis: scale to the data range instead of starting at zero">↕ Auto L</button></span>
+      <span class="seg seg-toggle"><button type="button" id="autoScaleBtnR" class="seg-btn" onclick="toggleAutoScale('R')"
+              title="Right Y axis: scale to the data range instead of starting at zero">↕ Auto R</button></span>
+      <span class="seg seg-toggle"><button type="button" id="shadedBtn" class="seg-btn" onclick="toggleShaded()"
+              title="Fill the area under each line">▨ Shaded</button></span>
       <span id="statusMsg" class="text-sm text-muted" style="margin-left:auto"></span>
       <button class="btn btn-ghost btn-sm" onclick="saveView()" title="Save current signals and settings as a named view">Save view</button>
       <div style="display:flex;align-items:center;gap:.3rem">
