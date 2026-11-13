@@ -383,3 +383,4 @@ tr[id^="edit-"]:empty { display: none; }
 .rule-table th, .rule-table td { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
 .rule-table td.rule-signal { width: 100%; max-width: 0; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-table td[colspan] { white-space: normal; padding: 0; }
