@@ -167,11 +167,13 @@ async def _get_all_variables(
     return result, truncated
 
 
-def _default_active_tags(state) -> list[SubTagActivation]:
+def _default_active_tags(state, folder=None) -> list[SubTagActivation]:
+    """Tags of a new subscription: the "Default Active" ones and the folder's."""
+    folder_tags = set(getattr(folder, "tag_ids", []) or [])
     return [
         SubTagActivation(tag_id=t.id, active=True)
         for t in state.config.tags.tags
-        if t.default_active
+        if t.default_active or t.id in folder_tags
     ]
 
 
@@ -303,7 +305,7 @@ class FolderScanner:
                         threshold=defaults.threshold,
                         heartbeat_interval_seconds=defaults.heartbeat_interval_seconds,
                     ),
-                    active_tags=_default_active_tags(state),
+                    active_tags=_default_active_tags(state, watcher),
                 )
                 state.config.subscriptions.subscriptions.append(new_sub)
                 changed = True

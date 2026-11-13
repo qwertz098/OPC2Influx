@@ -1,7 +1,11 @@
 {# One subscription row. Used by the list and returned after an inline edit,
    so both always look the same. Needs: sub, all_tags, tag_cache, server_map,
    folder_map, server_status, stripped_measurement. #}
-<tr id="row-{{ sub.id }}" class="{% if not sub.enabled %}opacity-50{% endif %}">
+{% set tag_state = {} %}{% for a in sub.active_tags %}{% set _ = tag_state.update({a.tag_id: 1 if a.active else 0}) %}{% endfor %}
+<tr id="row-{{ sub.id }}" class="sub-row{% if not sub.enabled %} opacity-50{% endif %}"
+    data-sub="{{ sub.id }}" data-server="{{ sub.server_id }}" data-origin="{{ sub.source_folder_id or 'manual' }}"
+    data-search="{{ ((sub.display_name or '') ~ ' ' ~ sub.influxdb.measurement ~ ' ' ~ sub.node_id) | lower }}"
+    data-tags='{{ tag_state | tojson }}'>
   <td class="fit" style="width:28%">
     <div class="ellipsis" title="{{ sub.display_name or sub.node_id }}">{{ sub.display_name or sub.node_id }}</div>
     {% if sub.source_folder_id and sub.source_folder_id in folder_map %}

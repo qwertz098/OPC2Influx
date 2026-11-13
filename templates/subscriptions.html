@@ -23,6 +23,7 @@
         <th>Server</th>
         <th>Rescan Interval</th>
         <th>Managed Subs</th>
+        <th title="Tags of all subscriptions of this folder, also the ones it finds later">Tags</th>
         <th>Status</th>
         <th>Actions</th>
       </tr>
@@ -47,6 +48,18 @@
           </form>
         </td>
         <td class="text-center">{{ managed_counts.get(f.id, 0) }}</td>
+        <td><span class="tag-badges">
+          {% for tag in all_tags.values() %}
+          {% set on = tag.id in f.tag_ids %}
+          <form action="/config/dynamic-folders/{{ f.id }}/toggle-tag/{{ tag.id }}" method="post" style="display:inline"
+                onsubmit="return confirm('{{ 'Switch off' if on else 'Switch on' }} tag {{ tag.name }} for all {{ managed_counts.get(f.id, 0) }} subscriptions of this folder{{ '' if on else ' and the ones it finds later' }}?')">
+            <button class="btn btn-xs tag-pill {{ 'tag-pill--active' if on else 'tag-pill--inactive' }}"
+                    title="{{ tag.key }}{% if not tag.is_dynamic %}={{ tag.static_value }}{% endif %}">
+              {% if tag.is_dynamic %}<em>{{ tag.short_name }}</em>{% else %}{{ tag.short_name }}{% endif %}
+            </button>
+          </form>
+          {% else %}<span class="text-xs text-muted">—</span>{% endfor %}
+        </span></td>
         <td>
           <span class="badge {% if f.enabled %}badge-dyn{% else %}badge-mode{% endif %}">
             {{ '⟳ Active' if f.enabled else 'Disabled' }}
@@ -126,6 +139,46 @@ function confirmDynDelete(form, count) {
 <div id="stale-panel"></div>
 
 {% if subscriptions %}
+<!-- Filter and bulk tag action -->
+<div class="card mb-3 sub-tools">
+  <div class="sub-tools-row">
+    <input class="input input-sm" id="fText" type="search" placeholder="Filter name, measurement, node ID…" style="flex:2;min-width:200px;max-width:none">
+    <select class="select select-sm" id="fServer" title="Server">
+      <option value="">All servers</option>
+      {% for sid, sname in server_map.items() %}<option value="{{ sid }}">{{ sname }}</option>{% endfor %}
+    </select>
+    <select class="select select-sm" id="fOrigin" title="Origin">
+      <option value="">All origins</option>
+      <option value="manual">Manual</option>
+      {% for f in folders %}<option value="{{ f.id }}">Folder: {{ f.display_name or f.folder_browse_path }}</option>{% endfor %}
+    </select>
+    {% if all_tags %}
+    <select class="select select-sm" id="fTag" title="Filter by the state of a tag">
+      <option value="">Any tags</option>
+      {% for t in all_tags.values() %}
+      <option value="{{ t.id }}:on">{{ t.name }}: on</option>
+      <option value="{{ t.id }}:off">{{ t.name }}: off</option>
+      <option value="{{ t.id }}:missing">{{ t.name }}: not assigned</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <button type="button" class="btn btn-tool btn-xs" onclick="clearSubFilter()">Clear</button>
+    <span class="text-sm text-muted" id="fCount" style="margin-left:auto;white-space:nowrap"></span>
+  </div>
+  {% if all_tags %}
+  <div class="sub-tools-row">
+    <span class="text-sm text-muted">Tag for all shown:</span>
+    <select class="select select-sm" id="bulkTag">
+      {% for t in all_tags.values() %}<option value="{{ t.id }}">{{ t.name }} ({{ t.key }})</option>{% endfor %}
+    </select>
+    <button type="button" class="btn btn-tool btn-xs" onclick="bulkTag('on')" title="Switch the tag on for every subscription shown">Switch on</button>
+    <button type="button" class="btn btn-tool btn-xs" onclick="bulkTag('off')" title="Switch the tag off but keep it assigned">Switch off</button>
+    <button type="button" class="btn btn-danger btn-xs" onclick="bulkTag('remove')" title="Remove the tag assignment completely">Remove</button>
+    <span class="text-sm" id="bulkMsg"></span>
+  </div>
+  {% endif %}
+</div>
+
 <div class="card">
   <div style="overflow-x:auto">
   <table class="table fit-table">
@@ -168,5 +221,78 @@ document.body.addEventListener('htmx:afterSwap', function(e) {
     t.closest('tr').style.display = t.innerHTML.trim() ? '' : 'none';
   }
 });
+
+// ─── Filter and bulk tag action ──────────────────────────────────────────────
+const SUB_FILTER_KEY = 'subscriptions_filter';
+
+function subFilter() {
+  const get = id => (document.getElementById(id) || {}).value || '';
+  return {text: get('fText').trim().toLowerCase(), server: get('fServer'), origin: get('fOrigin'), tag: get('fTag')};
+}
+
+function applySubFilter() {
+  const f = subFilter();
+  const words = f.text.split(/\s+/).filter(Boolean);
+  const [tagId, tagState] = f.tag ? f.tag.split(':') : [null, null];
+  let shown = 0, total = 0;
+  document.querySelectorAll('tr.sub-row').forEach(tr => {
+    total++;
+    const tags = JSON.parse(tr.dataset.tags || '{}');
+    let ok = words.every(w => tr.dataset.search.includes(w))
+      && (!f.server || tr.dataset.server === f.server)
+      && (!f.origin || tr.dataset.origin === f.origin);
+    if (ok && tagId) {
+      const v = tags[tagId];
+      ok = tagState === 'on' ? v === 1 : tagState === 'off' ? v === 0 : v === undefined;
+    }
+    tr.hidden = !ok;
+    const edit = tr.nextElementSibling;   // its inline edit row
+    if (edit && !edit.classList.contains('sub-row')) edit.hidden = !ok;
+    if (ok) shown++;
+  });
+  const c = document.getElementById('fCount');
+  if (c) c.textContent = shown === total ? `${total} subscriptions` : `${shown} of ${total} shown`;
+  try { sessionStorage.setItem(SUB_FILTER_KEY, JSON.stringify(f)); } catch {}
+}
+
+function clearSubFilter() {
+  for (const id of ['fText', 'fServer', 'fOrigin', 'fTag']) { const el = document.getElementById(id); if (el) el.value = ''; }
+  applySubFilter();
+}
+
+async function bulkTag(action) {
+  const sel = document.getElementById('bulkTag');
+  const ids = Array.from(document.querySelectorAll('tr.sub-row')).filter(tr => !tr.hidden).map(tr => tr.dataset.sub);
+  const msg = document.getElementById('bulkMsg');
+  if (!ids.length) { msg.textContent = 'No subscriptions shown.'; return; }
+  const name = sel.options[sel.selectedIndex].text;
+  const verb = {on: 'Switch on', off: 'Switch off', remove: 'Remove'}[action];
+  if (!confirm(`${verb} tag ${name} for ${ids.length} subscription${ids.length === 1 ? '' : 's'}?`)) return;
+  msg.textContent = 'Saving…'; msg.style.color = '';
+  try {
+    const resp = await fetch('/subscriptions/bulk-tag', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tag_id: sel.value, action, sub_ids: ids})});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    location.reload();
+  } catch (e) { msg.textContent = 'Failed: ' + e.message; msg.style.color = 'var(--red)'; }
+}
+
+(function initSubFilter() {
+  let f = null;
+  try { f = JSON.parse(sessionStorage.getItem(SUB_FILTER_KEY) || 'null'); } catch {}
+  if (f) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = v; };
+    set('fText', f.text); set('fServer', f.server); set('fOrigin', f.origin); set('fTag', f.tag);
+    for (const id of ['fServer', 'fOrigin', 'fTag']) {   // an option that no longer exists → all
+      const el = document.getElementById(id); if (el && el.selectedIndex < 0) el.value = '';
+    }
+  }
+  for (const id of ['fText', 'fServer', 'fOrigin', 'fTag']) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(id === 'fText' ? 'input' : 'change', applySubFilter);
+  }
+  applySubFilter();
+})();
 </script>
 {% endblock %}

@@ -442,3 +442,8 @@ tr[id^="edit-"]:empty { display: none; }
 /* Toolbar buttons: same frame as the on/off buttons, so all read as buttons */
 .btn-tool { background: var(--surface); color: var(--muted); border-color: var(--frame, var(--border)); font-weight: 600; }
 .btn-tool:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+
+/* Subscriptions: filter and bulk tag bar */
+.sub-tools { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+.sub-tools-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sub-tools-row .select-sm { width: auto; max-width: 260px; }
