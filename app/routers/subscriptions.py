@@ -6,11 +6,12 @@ from datetime import datetime
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app.config import save_subscriptions, SubTagActivation, SubscriptionConfig, apply_name_strips
 from app.dependencies import get_state
+from app.tag_bulk import apply_tag
 from app.state import RuntimeState
 
 router = APIRouter(prefix="/subscriptions")
@@ -189,6 +190,20 @@ async def toggle_subscription(sub_id: str, state: RuntimeState = Depends(get_sta
     if state.polling_engine:
         await state.polling_engine.reconcile()
     return RedirectResponse("/subscriptions", status_code=303)
+
+
+@router.post("/bulk-tag")
+async def bulk_tag(request: Request, state: RuntimeState = Depends(get_state)):
+    """Switch a tag on / off or remove it for many subscriptions.
+
+    Body: {"tag_id": str, "action": "on" | "off" | "remove", "sub_ids": [str]}
+    """
+    body = await request.json()
+    try:
+        n = apply_tag(state, body.get("sub_ids") or [], body.get("tag_id", ""), body.get("action", ""))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "changed": n})
 
 
 @router.post("/{sub_id}/toggle-tag/{tag_id}", response_class=HTMLResponse)

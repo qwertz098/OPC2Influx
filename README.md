@@ -457,6 +457,14 @@ Node-attribute tags are resolved once per polling cycle from the node's OPC UA a
 | Embed a changing runtime value from the PLC (batch, recipe, operator) | Central dynamic tag |
 | Embed OPC UA node metadata (browse name, description) | Per-subscription node-attribute tag |
 
+### Tags for many subscriptions at once
+
+- **Subscriptions page:** filter the list by text (name, measurement, node ID), server, origin (manual or a dynamic folder) and tag state (on / off / not assigned). "Tag for all shown" then switches a tag **on**, **off** (kept but inactive) or **removes** it for every subscription shown, after a confirmation with the count. The filter is kept while you move between pages.
+- **Dynamic folders:** the Tags column of a folder watcher switches a tag on or off for all subscriptions of that folder, and new subscriptions the watcher finds later get it as well (in addition to the "Default Active" tags). This overrides individual settings of that folder's subscriptions.
+- **Tags page:** "Active on" shows how many subscriptions use a tag; "All on", "All off" and "Remove from all" act on every subscription.
+
+Changes apply from the next written value; values already stored in InfluxDB keep their tags.
+
 ---
 
 ## Alerts

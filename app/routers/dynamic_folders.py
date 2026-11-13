@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 
 from app.config import save_dynamic_folders, save_subscriptions
 from app.dependencies import get_state
+from app.tag_bulk import apply_tag
 from app.state import RuntimeState
 
 router = APIRouter(prefix="/config/dynamic-folders")
@@ -67,4 +68,18 @@ async def delete_folder(folder_id: str, request: Request, state: RuntimeState = 
         f for f in state.config.dynamic_folders.folders if f.id != folder_id
     ]
     save_dynamic_folders(state.config.dynamic_folders, state.config_dir)
+    return RedirectResponse("/subscriptions", status_code=303)
+
+
+@router.post("/{folder_id}/toggle-tag/{tag_id}")
+async def toggle_folder_tag(folder_id: str, tag_id: str, state: RuntimeState = Depends(get_state)):
+    """Switch a tag on / off for the folder: all its subscriptions now, and the
+    ones the watcher finds later."""
+    folder = next((f for f in state.config.dynamic_folders.folders if f.id == folder_id), None)
+    if folder and any(t.id == tag_id for t in state.config.tags.tags):
+        on = tag_id not in folder.tag_ids
+        folder.tag_ids = folder.tag_ids + [tag_id] if on else [t for t in folder.tag_ids if t != tag_id]
+        save_dynamic_folders(state.config.dynamic_folders, state.config_dir)
+        managed = [s.id for s in state.config.subscriptions.subscriptions if s.source_folder_id == folder_id]
+        apply_tag(state, managed, tag_id, "on" if on else "off")
     return RedirectResponse("/subscriptions", status_code=303)

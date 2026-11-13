@@ -380,6 +380,7 @@ class DynamicFolderConfig(BaseModel):
     display_name: str = ""
     rescan_interval_seconds: int = 300
     enabled: bool = True
+    tag_ids: list[str] = []         # central tags active on all subscriptions of this folder
 
 
 class DynamicFoldersConfig(BaseModel):

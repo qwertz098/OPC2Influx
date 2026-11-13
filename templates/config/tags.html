@@ -18,7 +18,9 @@
       <li><strong>Dynamic</strong>: the value is read from another OPC UA node next to the signal,
         e.g. the recipe or batch name, and changes with it.</li>
       <li><strong>Per signal</strong>: switch tags on or off with the small tag buttons in the
-        Tags column on the <a href="/subscriptions">Subscriptions</a> page.
+        Tags column on the <a href="/subscriptions">Subscriptions</a> page. For many signals at once:
+        filter the list there and use "Tag for all shown", give a dynamic folder its tags, or use
+        "All on / All off / Remove from all" below.
         <strong>Default Active</strong> switches the tag on for signals subscribed from now on.</li>
     </ul>
     <p class="text-muted" style="margin:0">Tags only go to InfluxDB; the SQLite files have no tags.
@@ -40,6 +42,7 @@
           <th>Type</th>
           <th>Value / Path</th>
           <th>Default Active</th>
+          <th title="Number of subscriptions the tag is switched on for">Active on</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -59,9 +62,19 @@
           <span class="badge badge-mode">No</span>
           {% endif %}
         </td>
+        <td class="text-sm">{{ tag_usage.get(tag.id, 0) }} / {{ sub_count }}</td>
         <td><div class="actions">
           <button type="button" class="btn btn-ghost btn-xs"
                   onclick="toggleEditRow('tag-edit-{{ tag.id }}')">Edit</button>
+          {% for action, label, title in [('on', 'All on', 'Switch the tag on for all subscriptions'),
+                                          ('off', 'All off', 'Switch the tag off for all subscriptions, but keep it assigned'),
+                                          ('remove', 'Remove from all', 'Remove the tag assignment from all subscriptions')] %}
+          <form action="/config/tags/{{ tag.id }}/apply-all" method="post" style="display:inline"
+                onsubmit="return confirm('{{ label }}: tag {{ tag.name }} on all {{ sub_count }} subscriptions?')">
+            <input type="hidden" name="action" value="{{ action }}">
+            <button class="btn {{ 'btn-danger' if action == 'remove' else 'btn-ghost' }} btn-xs" title="{{ title }}">{{ label }}</button>
+          </form>
+          {% endfor %}
           <form action="/config/tags/{{ tag.id }}/delete" method="post" style="display:inline"
                 onsubmit="return confirm('Delete tag {{ tag.name }}?')">
             <button class="btn btn-danger btn-xs">Delete</button>

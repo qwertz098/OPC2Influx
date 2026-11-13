@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import CentralTagConfig, save_tags, SubTagActivation
 from app.dependencies import get_state
+from app.tag_bulk import ACTIONS, apply_tag, tag_usage
 from app.state import RuntimeState
 
 router = APIRouter(prefix="/config/tags")
@@ -18,6 +19,8 @@ async def list_tags(request: Request, state: RuntimeState = Depends(get_state)):
     return templates.TemplateResponse(request, "config/tags.html", {
         "request": request,
         "tags": state.config.tags.tags,
+        "tag_usage": tag_usage(state),
+        "sub_count": len(state.config.subscriptions.subscriptions),
     })
 
 
@@ -77,4 +80,16 @@ async def update_tag(tag_id: str, request: Request, state: RuntimeState = Depend
     if state.polling_engine:
         state.polling_engine._tag_cache.clear()
     save_tags(state.config.tags, state.config_dir)
+    return RedirectResponse("/config/tags", status_code=303)
+
+
+@router.post("/{tag_id}/apply-all")
+async def apply_to_all(tag_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    """Switch the tag on / off or remove it on every subscription."""
+    action = (await request.form()).get("action", "")
+    if action in ACTIONS:
+        try:
+            apply_tag(state, [s.id for s in state.config.subscriptions.subscriptions], tag_id, action)
+        except ValueError:
+            pass
     return RedirectResponse("/config/tags", status_code=303)
