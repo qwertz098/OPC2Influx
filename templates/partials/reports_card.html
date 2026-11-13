@@ -1,0 +1,247 @@
+{# Periodic e-mail reports: settings, list and editor (Alerts page). #}
+<div class="card mt-4" id="reports">
+  <div class="card-header">Reports</div>
+  <div class="card-body" style="padding:.75rem 1rem">
+    <p class="text-sm text-muted mb-3">
+      Daily, weekly and monthly e-mail with figures of selected signals from InfluxDB.
+      <strong>Trend value</strong> (e.g. power, temperature, pressure): time-weighted mean with the change to
+      the period before, minimum and maximum with their time, optionally the integral (value × hours, e.g. power → energy).
+      <strong>Event</strong> (on/off signal, e.g. an error bit): number of rising ↑ or falling ↓ edges and the time
+      it was on, each compared with the period before.
+      <strong>Counter reading</strong> (e.g. energy or operating-hours meter): reading at the end of the period,
+      the change since the last report and how it compares with the change in the period before.
+    </p>
+
+    <form action="/config/reports/settings" method="post" class="form-row" style="align-items:flex-end">
+      <div class="form-group" style="flex:0 0 120px">
+        <label class="form-label" title="Reports go out at this time after the end of their period: daily for the day before, weekly on Monday, monthly on the 1st">Send time</label>
+        <input class="input" type="time" name="send_time" value="{{ reports_cfg.send_time }}" required>
+      </div>
+      <div class="form-group" style="flex:0 0 260px">
+        <label class="form-label" title="Where days, weeks and months begin">Time base</label>
+        <select class="select" name="timezone">
+          <option value="local" {% if reports_cfg.timezone == 'local' %}selected{% endif %}>Local time of the machine</option>
+          <option value="utc" {% if reports_cfg.timezone == 'utc' %}selected{% endif %}>UTC</option>
+        </select>
+      </div>
+      <div class="form-buttons"><button type="submit" class="btn btn-primary btn-xs">Save</button></div>
+    </form>
+    <p class="text-xs text-muted" style="margin:-4px 0 12px">
+      Machine time now: <span id="machineTime">{{ machine_time }}</span>.
+      In Docker the container runs on UTC unless the TZ variable is set (e.g. TZ=Europe/Berlin).
+    </p>
+
+    {% if reports_cfg.reports %}
+    <table class="table fit-table" style="margin-bottom:1rem">
+      <thead>
+        <tr><th>Name</th><th>Periods</th><th>Signals</th><th>Recipients</th><th>Last sent</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for r in reports_cfg.reports %}
+        {% set sent = report_sent.get(r.id, {}) %}
+        <tr class="{% if not r.enabled %}opacity-50{% endif %}">
+          <td>{{ r.name }}</td>
+          <td>
+            {% for kind, label in [('daily', 'Day'), ('weekly', 'Week'), ('monthly', 'Month')] if r[kind] %}
+            <span class="badge badge-mode">{{ label }}</span>
+            {% endfor %}
+          </td>
+          <td class="text-sm">{{ r.signals | length }}</td>
+          <td class="fit text-sm"><div class="ellipsis" title="{{ r.recipients | join(', ') }}">{{ r.recipients | join(', ') or '—' }}</div></td>
+          <td class="text-xs text-muted">
+            {% for kind in ['daily', 'weekly', 'monthly'] if r[kind] and sent.get(kind) %}{{ sent.get(kind) }}{% if not loop.last %} · {% endif %}{% endfor %}
+          </td>
+          <td>
+            <span class="badge {% if r.enabled %}badge-ok{% else %}badge-mode{% endif %}">{{ 'Active' if r.enabled else 'Disabled' }}</span>
+          </td>
+          <td><div class="actions">
+            <button type="button" class="btn btn-ghost btn-xs" onclick="reportEdit('{{ r.id }}')">Edit</button>
+            <select class="select select-sm" id="rep-period-{{ r.id }}" style="width:auto;flex:none;padding:1px 22px 1px 6px" title="Period for Preview and Send now">
+              {% for kind, label in [('daily', 'Day'), ('weekly', 'Week'), ('monthly', 'Month')] if r[kind] %}
+              <option value="{{ kind }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-ghost btn-xs" onclick="reportPreview('{{ r.id }}')"
+                    title="Show the report of the last completed period (nothing is sent)">Preview</button>
+            <button type="button" class="btn btn-ghost btn-xs" onclick="reportSend('{{ r.id }}', this)"
+                    title="Send the report of the last completed period now">Send now</button>
+            <form action="/config/reports/{{ r.id }}/toggle" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-xs">{{ 'Disable' if r.enabled else 'Enable' }}</button>
+            </form>
+            <form action="/config/reports/{{ r.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirm('Delete report {{ r.name }}?')">
+              <button class="btn btn-danger btn-xs">Delete</button>
+            </form>
+          </div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <div id="reportMsg" class="text-sm" style="margin-bottom:8px"></div>
+
+    <!-- Editor: add or edit a report -->
+    <div id="reportEditor" class="card" style="padding:12px;background:var(--panel)">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px" id="reportEditorTitle">Add report</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="input" id="repName" placeholder="Plant TG150">
+        </div>
+        <div class="form-group" style="flex:2">
+          <label class="form-label">Recipients <span class="text-muted text-xs">(comma or one per line)</span></label>
+          <textarea class="input" id="repRecipients" rows="1" placeholder="operator@example.com"></textarea>
+        </div>
+        <div class="form-group" style="flex:0 0 auto">
+          <label class="form-label">Periods</label>
+          <div style="display:flex;gap:12px;padding-top:6px">
+            <label class="checkbox-label"><input type="checkbox" id="repDaily" checked> Day</label>
+            <label class="checkbox-label"><input type="checkbox" id="repWeekly"> Week</label>
+            <label class="checkbox-label"><input type="checkbox" id="repMonthly"> Month</label>
+          </div>
+        </div>
+      </div>
+
+      <table class="table fit-table" style="margin-bottom:8px">
+        <thead>
+          <tr>
+            <th>Signal</th><th>Kind</th><th>Unit</th>
+            <th title="Trend values only: also report the integral = value × hours, e.g. power → energy, flow → volume">Integral</th>
+            <th title="value·h × factor, e.g. 0.001 for W → kWh, 1 for m³/h → m³">Factor</th><th>Integral unit</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="repSignals"></tbody>
+      </table>
+      <datalist id="repSubList">
+        {% for s in subscriptions %}<option value="{{ s.display_name or s.node_id }} · {{ s.influxdb.measurement }}"></option>{% endfor %}
+      </datalist>
+      <button type="button" class="btn btn-tool btn-xs" onclick="repAddSignal()">+ Signal</button>
+
+      <div class="form-actions form-actions--edit">
+        <span id="repEditorMsg" class="text-sm" style="margin-right:auto"></span>
+        <button type="button" class="btn btn-primary btn-xs" onclick="reportSave()">Save</button>
+        <button type="button" class="btn btn-ghost btn-xs" onclick="reportReset()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Reports editor ──────────────────────────────────────────────────────────
+const REPORTS = {{ reports_json | tojson }};
+const REP_SUBS = {{ report_subs | tojson }};   // [{id, label}]
+let repEditId = null;
+
+function repSubLabel(id) { const s = REP_SUBS.find(x => x.id === id); return s ? s.label : id; }
+function repSubId(label) { const s = REP_SUBS.find(x => x.label === label); return s ? s.id : ''; }
+
+function repAddSignal(sig) {
+  sig = sig || {subscription_id: '', kind: 'gauge', unit: '', energy: false, energy_factor: 1, energy_unit: ''};
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="fit" style="width:45%"><input class="input input-sm rep-sig" list="repSubList" placeholder="Type to search subscriptions…" style="max-width:none"></td>
+    <td><select class="select select-sm rep-kind"><option value="gauge">Trend value</option><option value="counter">Counter reading</option><option value="event:rising">Event ↑ (rising)</option><option value="event:falling">Event ↓ (falling)</option></select></td>
+    <td><input class="input input-sm rep-unit" style="width:70px" placeholder="kW"></td>
+    <td style="text-align:center"><input type="checkbox" class="rep-energy"></td>
+    <td><input class="input input-sm rep-factor" type="number" step="any" style="width:80px"></td>
+    <td><input class="input input-sm rep-eunit" style="width:70px" placeholder="kWh"></td>
+    <td><button type="button" class="btn btn-ghost btn-xs" style="color:var(--red)" title="Remove">✕</button></td>`;
+  tr.querySelector('.rep-sig').value = sig.subscription_id ? repSubLabel(sig.subscription_id) : '';
+  tr.querySelector('.rep-kind').value = sig.kind === 'event' ? 'event:' + (sig.edge || 'rising') : sig.kind;
+  tr.querySelector('.rep-unit').value = sig.unit || '';
+  tr.querySelector('.rep-energy').checked = !!sig.energy;
+  tr.querySelector('.rep-factor').value = sig.energy_factor ?? 1;
+  tr.querySelector('.rep-eunit').value = sig.energy_unit || '';
+  const sync = () => {   // integral only for trend values
+    const gauge = tr.querySelector('.rep-kind').value === 'gauge';
+    const on = gauge && tr.querySelector('.rep-energy').checked;
+    tr.querySelector('.rep-unit').disabled = tr.querySelector('.rep-kind').value.startsWith('event');
+    tr.querySelector('.rep-energy').disabled = !gauge;
+    tr.querySelector('.rep-factor').disabled = tr.querySelector('.rep-eunit').disabled = !on;
+  };
+  tr.querySelector('.rep-kind').addEventListener('change', sync);
+  tr.querySelector('.rep-energy').addEventListener('change', sync);
+  tr.querySelector('button').addEventListener('click', () => tr.remove());
+  sync();
+  document.getElementById('repSignals').appendChild(tr);
+}
+
+function reportReset() {
+  repEditId = null;
+  document.getElementById('reportEditorTitle').textContent = 'Add report';
+  document.getElementById('repName').value = '';
+  document.getElementById('repRecipients').value = '';
+  document.getElementById('repDaily').checked = true;
+  document.getElementById('repWeekly').checked = false;
+  document.getElementById('repMonthly').checked = false;
+  document.getElementById('repSignals').innerHTML = '';
+  document.getElementById('repEditorMsg').textContent = '';
+  repAddSignal();
+}
+
+function reportEdit(id) {
+  const r = REPORTS.find(x => x.id === id);
+  if (!r) return;
+  reportReset();
+  repEditId = id;
+  document.getElementById('reportEditorTitle').textContent = 'Edit report ' + r.name;
+  document.getElementById('repName').value = r.name;
+  document.getElementById('repRecipients').value = r.recipients.join(', ');
+  document.getElementById('repDaily').checked = r.daily;
+  document.getElementById('repWeekly').checked = r.weekly;
+  document.getElementById('repMonthly').checked = r.monthly;
+  document.getElementById('repSignals').innerHTML = '';
+  r.signals.forEach(s => repAddSignal(s));
+  if (!r.signals.length) repAddSignal();
+  document.getElementById('reportEditor').scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+async function reportSave() {
+  const msg = document.getElementById('repEditorMsg');
+  const signals = [];
+  for (const tr of document.querySelectorAll('#repSignals tr')) {
+    const label = tr.querySelector('.rep-sig').value.trim();
+    if (!label) continue;
+    const id = repSubId(label);
+    if (!id) { msg.textContent = 'Unknown signal: ' + label; msg.style.color = 'var(--red)'; return; }
+    const [kind, edge] = tr.querySelector('.rep-kind').value.split(':');
+    signals.push({subscription_id: id, kind, edge: edge || 'rising',
+      unit: tr.querySelector('.rep-unit').value.trim(), energy: tr.querySelector('.rep-energy').checked,
+      energy_factor: parseFloat(tr.querySelector('.rep-factor').value) || 1,
+      energy_unit: tr.querySelector('.rep-eunit').value.trim()});
+  }
+  const body = {id: repEditId, name: document.getElementById('repName').value,
+    recipients: document.getElementById('repRecipients').value,
+    daily: document.getElementById('repDaily').checked, weekly: document.getElementById('repWeekly').checked,
+    monthly: document.getElementById('repMonthly').checked, signals};
+  if (!signals.length) { msg.textContent = 'Add at least one signal.'; msg.style.color = 'var(--red)'; return; }
+  const resp = await fetch('/config/reports', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                body: JSON.stringify(body)});
+  const data = await resp.json();
+  if (!resp.ok) { msg.textContent = data.error || 'Save failed'; msg.style.color = 'var(--red)'; return; }
+  location.hash = 'reports';
+  location.reload();
+}
+
+function reportPreview(id) {
+  const period = document.getElementById('rep-period-' + id).value || 'daily';
+  window.open(`/config/reports/${id}/preview?period=${period}`, '_blank', 'noopener');
+}
+
+async function reportSend(id, btn) {
+  const period = document.getElementById('rep-period-' + id).value || 'daily';
+  const msg = document.getElementById('reportMsg');
+  btn.disabled = true;
+  msg.textContent = 'Sending…'; msg.style.color = '';
+  try {
+    const resp = await fetch(`/config/reports/${id}/send?period=${period}`, {method: 'POST'});
+    const data = await resp.json();
+    msg.textContent = resp.ok ? data.message : 'Not sent: ' + data.error;
+    msg.style.color = resp.ok ? 'var(--ok)' : 'var(--red)';
+  } catch (e) {
+    msg.textContent = 'Not sent: ' + e.message; msg.style.color = 'var(--red)';
+  } finally { btn.disabled = false; }
+}
+
+reportReset();
+</script>

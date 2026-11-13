@@ -33,7 +33,7 @@ from app.routers import (
     dashboard, opcua_browser, subscriptions,
     server_config, influxdb_config, alerts_config,
 )
-from app.routers import sqlite_config, config_backup, tags_config, alarm_rules, data_viewer
+from app.routers import sqlite_config, config_backup, tags_config, alarm_rules, data_viewer, reports
 from app.routers import chart, help_page, dynamic_folders, app_settings, stale_watchdog
 
 logging.basicConfig(
@@ -150,6 +150,8 @@ async def lifespan(app: FastAPI):
     state.watchdog_task = asyncio.create_task(state.watchdog.run(), name="watchdog")
     asyncio.create_task(AlarmRuleChecker().run(state), name="alarm-checker")
     asyncio.create_task(StaleValueChecker().run(state), name="stale-watchdog")
+    from app.reports.scheduler import ReportScheduler
+    asyncio.create_task(ReportScheduler().run(state), name="report-scheduler")
     _scanner = FolderScanner(state)
     state.folder_scanner_task = asyncio.create_task(_scanner.run(), name="folder-scanner")
     state.folder_scanner = _scanner
@@ -192,6 +194,7 @@ app.include_router(subscriptions.router)
 app.include_router(server_config.router)
 app.include_router(influxdb_config.router)
 app.include_router(alerts_config.router)
+app.include_router(reports.router)
 app.include_router(sqlite_config.router)
 app.include_router(config_backup.router)
 app.include_router(tags_config.router)
