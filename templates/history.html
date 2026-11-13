@@ -468,10 +468,13 @@ function applyStartDuration() {
 
 // Whole range: move by a fraction of its length, or stretch around its centre
 function customRange() { stopFollow(); markPreset(0); }
+// There is no data in the future: the range never ends after "now"
 function shiftRange(frac) {
   if (!range) return;
   customRange();
-  const d = (range[1] - range[0]) * frac;
+  let d = (range[1] - range[0]) * frac;
+  if (d > 0) d = Math.min(d, Date.now() - range[1]);
+  if (frac > 0 && d <= 0) return;
   win = [win[0] + d, win[1] + d];
   setRange(range[0] + d, range[1] + d, true);
 }
@@ -480,7 +483,9 @@ function stretchRange(factor) {
   customRange();
   const mid = (range[0] + range[1]) / 2, half = (range[1] - range[0]) * factor / 2;
   if (half < 30e3) return;
-  setRange(mid - half, mid + half, true);
+  // Widening near "now" grows into the past only
+  const end = Math.min(mid + half, Math.max(Date.now(), range[1]));
+  setRange(end - 2 * half, end, true);
 }
 
 function updateRangeLabel() {
