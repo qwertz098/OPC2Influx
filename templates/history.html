@@ -60,10 +60,6 @@
       </label>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
-      <span class="y-range" title="Fixed Y axis range. Leave a field empty to scale that end automatically (Auto Scale decides whether the automatic end may leave zero).">
-        Y <input id="yMinInp" class="input input-sm y-inp" type="number" step="any" placeholder="min" onchange="onYRangeChange()">
-        – <input id="yMaxInp" class="input input-sm y-inp" type="number" step="any" placeholder="max" onchange="onYRangeChange()">
-      </span>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each mean line">▨ Shaded</button>
       <button class="btn btn-ghost btn-sm" onclick="unselectAll()">✕ Unselect All</button>
@@ -134,6 +130,11 @@
 
   <!-- Right: chart, overview, legend -->
   <div class="card">
+    <div class="chart-wrap">
+      <input id="yMaxInp" class="input y-axis-inp" type="number" step="any" placeholder="max" hidden
+             title="Upper end of the Y axis. Empty = automatic." onchange="onYRangeChange()">
+      <input id="yMinInp" class="input y-axis-inp" type="number" step="any" placeholder="min" hidden
+             title="Lower end of the Y axis. Empty = automatic (Auto Scale decides whether it may leave zero)." onchange="onYRangeChange()">
     <div id="chart-area" style="width:100%;height:calc(100vh - 330px);min-height:420px">
       <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
            height:100%;color:var(--text-muted);font-size:.9rem">
@@ -151,6 +152,7 @@
         <button type="button" class="seg-btn" onclick="stretchRange(0.5)" title="Narrow the whole range to half its length" aria-label="Narrow range"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14M5 7h4M7 5v4"/></svg></button>
       </div>
       <span class="info-icon" title="Mouse wheel: zoom&#10;Drag: pan&#10;Shift + drag: zoom to box&#10;Overview handles: pick the window&#10;Double-click: whole range&#10;Arrows: move the whole range by half its length&#10;Magnifiers: widen or narrow the whole range"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+    </div>
     </div>
     <div id="chart-legend" style="padding:.5rem 1rem;border-top:1px solid var(--border);display:none"></div>
   </div>
@@ -289,6 +291,7 @@ async function loadWindow() {
 function getOrInitChart() {
   if (!chart) {
     chart = echarts.init(document.getElementById('chart-area'));
+    chart.on('finished', () => placeYInputs(chart));
     window.addEventListener('resize', () => chart.resize());
     chart.on('datazoom', onDataZoom);
     chart.getZr().on('dblclick', () => {
@@ -356,7 +359,7 @@ function renderChart() {
   const k = chartColors();
   c.setOption({
     animation: false,
-    grid: [{left: 60, right: 24, top: 20, bottom: 130}, {left: 60, right: 24, height: 60, bottom: 34}],
+    grid: [{left: 60, right: 24, top: 32, bottom: 130}, {left: 60, right: 24, height: 60, bottom: 34}],
     xAxis: [
       themedAxis(k, {type: 'time', gridIndex: 0, min: range[0], max: range[1]}),
       themedAxis(k, {type: 'time', gridIndex: 1, min: range[0], max: range[1],

@@ -28,10 +28,6 @@
               title="Logarithmic time axis — compresses old data, spreads recent values">⏱ Log Time</button>
       <button id="autoScaleBtn" class="btn btn-ghost btn-sm" onclick="toggleAutoScale()"
               title="Auto-scale Y axis to data range instead of starting from zero">⤢ Auto Scale</button>
-      <span class="y-range" title="Fixed Y axis range. Leave a field empty to scale that end automatically (Auto Scale decides whether the automatic end may leave zero).">
-        Y <input id="yMinInp" class="input input-sm y-inp" type="number" step="any" placeholder="min" onchange="onYRangeChange()">
-        – <input id="yMaxInp" class="input input-sm y-inp" type="number" step="any" placeholder="max" onchange="onYRangeChange()">
-      </span>
       <button id="shadedBtn" class="btn btn-ghost btn-sm" onclick="toggleShaded()"
               title="Fill the area under each line">▨ Shaded</button>
       <label class="text-sm text-muted" style="display:flex;align-items:center;gap:.35rem"
@@ -155,11 +151,17 @@
 
   <!-- Right: ECharts live chart -->
   <div class="card">
+    <div class="chart-wrap">
+      <input id="yMaxInp" class="input y-axis-inp" type="number" step="any" placeholder="max" hidden
+             title="Upper end of the Y axis. Empty = automatic." onchange="onYRangeChange()">
+      <input id="yMinInp" class="input y-axis-inp" type="number" step="any" placeholder="min" hidden
+             title="Lower end of the Y axis. Empty = automatic (Auto Scale decides whether it may leave zero)." onchange="onYRangeChange()">
     <div id="chart-area" style="width:100%;height:calc(100vh - 300px);min-height:320px">
       <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
            height:100%;color:var(--text-muted);font-size:.9rem">
         Select signals from the tree, then press Start.
       </div>
+    </div>
     </div>
     <!-- Legend: one row per signal -->
     <div id="chart-legend" style="padding:.5rem 1rem;border-top:1px solid var(--border);display:none"></div>
@@ -190,6 +192,8 @@ let shadedMode         = false;
 let chartInitialized = false;
 let pollingTimer     = null;
 let startedAt        = null;
+let lastPollAt       = null;   // browser time of the last successful poll
+let serverOffsetMs   = 0;      // server clock − browser clock (from the HTTP Date header)
 let chart            = null;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -275,6 +279,7 @@ function startCharting() {
   running   = true;
   paused    = false;
   startedAt = Date.now();
+  lastPollAt = null;
   const ms  = parseInt(document.getElementById('intervalSel').value);
   pollingTimer = setInterval(pollAndRender, ms);
   pollAndRender();
@@ -291,6 +296,7 @@ function clearCharting(reason) {
   running   = false;
   paused    = false;
   startedAt = null;
+  lastPollAt = null;
   for (const key of buffers.keys()) buffers.set(key, []);
   chartInitialized = false;
   renderChart();
@@ -401,6 +407,14 @@ async function pollAndRender() {
     // Stamp with the browser's clock: the server's clock may differ (e.g. a gateway
     // without NTP), and the chart compares points against the browser's "now".
     const receivedAt = Date.now();
+    const serverDate = Date.parse(resp.headers.get('Date') || '');
+    if (isFinite(serverDate)) serverOffsetMs = serverDate - receivedAt;
+    // Missed polls (background tab, other page in this tab): fill the gap from InfluxDB
+    const intervalMs = parseInt(document.getElementById('intervalSel').value);
+    if (lastPollAt && receivedAt - lastPollAt > Math.max(3 * intervalMs, 5000)) {
+      backfillGap(lastPollAt, receivedAt, intervalMs);
+    }
+    lastPollAt = receivedAt;
     for (const r of results) {
       const key = sigKey(r.server_id, r.node_id);
       if (r.v === null || !buffers.has(key)) continue;
@@ -420,10 +434,53 @@ async function pollAndRender() {
   }
 }
 
+// ─── Gap backfill ─────────────────────────────────────────────────────────────
+// The browser throttles or stops polling while the tab is hidden or another page
+// is open. Recorded values for that time come from InfluxDB (subscribed signals
+// only) and are inserted into the buffers; their timestamps are shifted from the
+// server's clock to the browser's, like the live points.
+async function backfillGap(fromMs, toMs, intervalMs) {
+  const keys = Array.from(selectedSignals.keys());
+  const points = Math.max(10, Math.min(2000, Math.round((toMs - fromMs) / intervalMs)));
+  try {
+    const resp = await fetch('/chart/history/data', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        signals: keys.map(k => selectedSignals.get(k)).map(s => ({server_id: s.server_id, node_id: s.node_id})),
+        from: Math.round(fromMs + serverOffsetMs), to: Math.round(toMs + serverOffsetMs), points,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) return;   // no InfluxDB: the gap stays
+    let filled = 0;
+    for (const s of data.signals || []) {
+      const key = sigKey(s.server_id, s.node_id);
+      const buf = buffers.get(key);
+      if (!buf || !s.points.length) continue;
+      const pts = s.points
+        .map(([t, mean]) => ({t: t - serverOffsetMs, v: mean}))
+        .filter(p => p.t > fromMs && p.t < toMs && p.v !== null);
+      if (!pts.length) continue;
+      // Insert in time order, before the first live point after the gap
+      let i = buf.findIndex(p => p.t >= toMs);
+      if (i < 0) i = buf.length;
+      buf.splice(i, 0, ...pts);
+      if (buf.length > MAX_PTS) decimateBuffer(buf);
+      filled += pts.length;
+    }
+    if (filled) {
+      updateSeriesData();
+      setStatus('Filled a gap of ' + Math.round((toMs - fromMs) / 1000) + ' s from InfluxDB');
+    }
+  } catch (e) { /* best effort: keep the gap */ }
+}
+
 // ─── Render ───────────────────────────────────────────────────────────────────
 function getOrInitChart() {
   if (!chart) {
     chart = echarts.init(document.getElementById('chart-area'));
+    chart.on('finished', () => placeYInputs(chart));
     window.addEventListener('resize', () => chart.resize());
   }
   return chart;
@@ -649,6 +706,7 @@ function saveState() {
     yRange: readYRange(),
     shadedMode,
     startedAt,
+    lastPollAt,
     interval: document.getElementById('intervalSel').value,
     maxTime:  document.getElementById('maxTimeSel').value,
   };
@@ -673,6 +731,7 @@ function restoreState() {
   logTimeMode     = !!state.logTimeMode;
   autoScaleMode   = !!state.autoScaleMode;
   startedAt       = state.startedAt || null;
+  lastPollAt      = state.running && !state.paused ? state.lastPollAt || null : null;
 
   // Restore UI controls
   document.getElementById('intervalSel').value = state.interval || '1000';

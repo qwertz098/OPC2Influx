@@ -119,3 +119,19 @@ function yLimits() {
   const r = readYRange();
   return {min: r.min, max: r.max};
 }
+
+// Put the Y range inputs (#yMaxInp / #yMinInp inside the chart's DOM element)
+// at the top and bottom end of the first grid's Y axis, left of the axis line.
+function placeYInputs(chart) {
+  const top = document.getElementById('yMaxInp'), bottom = document.getElementById('yMinInp');
+  if (!top || !bottom || !chart) return;
+  const grid = chart.getModel() && chart.getModel().getComponent('grid', 0);
+  const rect = grid && grid.coordinateSystem && grid.coordinateSystem.getRect();
+  const shown = !!(rect && rect.height > 0 && chart.getOption().series.length);
+  for (const el of [top, bottom]) el.hidden = !shown;
+  if (!shown) return;
+  const w = Math.max(44, rect.x - 6);
+  for (const el of [top, bottom]) { el.style.width = w + 'px'; el.style.left = '2px'; }
+  top.style.top = Math.max(0, rect.y - 26) + 'px';
+  bottom.style.top = (rect.y + rect.height + 4) + 'px';
+}
