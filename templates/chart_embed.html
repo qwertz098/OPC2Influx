@@ -104,7 +104,7 @@ function buildSeries() {
     const buf = buffers.get(key) || [];
     const mul = MULTIPLIERS[key] || 1.0;
     const data = LOG_TIME
-      ? buf.map(pt => [-Math.log10(nowMs - pt.t + 1), pt.v * mul])
+      ? buf.map(pt => [-Math.log10(Math.max(0, nowMs - pt.t) + 1), pt.v * mul])
       : buf.map(pt => [pt.t, pt.v * mul]);
     seriesKeys.push(key);
     return {
@@ -243,11 +243,14 @@ async function poll() {
       body: JSON.stringify(payload),
     });
     const results = await resp.json();
+    // Stamp with the browser's clock: the server's clock may differ (e.g. a gateway
+    // without NTP), and the chart compares points against the browser's "now".
+    const receivedAt = Date.now();
     for (const r of results) {
       const key = r.server_id + '|' + r.node_id;
       if (r.v === null || !buffers.has(key)) continue;
       const buf = buffers.get(key);
-      buf.push({t: r.t, v: r.v});
+      buf.push({t: receivedAt, v: r.v});
       if (MAX_SEC > 0) trimBuffer(buf, MAX_SEC * 1000);
       if (buf.length > MAX_PTS) decimateBuffer(buf);
     }
