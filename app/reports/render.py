@@ -69,8 +69,8 @@ def _counter_rows(sigs: list[SignalFigures]) -> list[list[str]]:
              _with_unit(s.counter_change, s.unit), s.error] for s in sigs]
 
 
-GAUGE_HEAD = ["Signal", "Mean", "vs. previous", "Min", "Max", "Energy", "vs. previous", ""]
-COUNTER_HEAD = ["Counter", "Reading", "Last report", "Change", ""]
+GAUGE_HEAD = ["Trend value", "Mean", "vs. previous", "Min", "Max", "Integral", "vs. previous", ""]
+COUNTER_HEAD = ["Counter reading", "Reading", "Last report", "Change", ""]
 
 
 def text_body(fig: ReportFigures, tz_mode: str) -> str:
@@ -133,5 +133,5 @@ def html_body(fig: ReportFigures, tz_mode: str) -> str:
     if counters:
         parts.append(table(COUNTER_HEAD, _counter_rows(counters)))
     parts.append('<div style="color:#999;font-size:11px">"vs. previous": difference to the period before. '
-                 "Mean and energy are time-weighted: a value holds until the next one.</div></div>")
+                 "Mean and integral are time-weighted: a value holds until the next one.</div></div>")
     return "\n".join(parts)

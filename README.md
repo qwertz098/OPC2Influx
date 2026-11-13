@@ -479,12 +479,12 @@ Daily, weekly and monthly e-mails with figures of selected signals from InfluxDB
 
 | Kind | Figures |
 |---|---|
-| **Value** (e.g. power) | time-weighted mean and its change to the period before, minimum and maximum with their time, optionally the **energy** = value × hours (with a factor, e.g. `0.001` for W → kWh) and its change |
-| **Counter** (e.g. an energy meter) | reading at the end of the period, reading at the last report, and the difference |
+| **Trend value** (e.g. power, temperature, pressure, flow) | time-weighted mean and its change to the period before, minimum and maximum with their time, optionally the **integral** = value × hours with a factor and unit (e.g. power → energy with `0.001` for W → kWh, flow m³/h → volume m³) and its change |
+| **Counter reading** (e.g. energy, volume or operating-hours meter) | reading at the end of the period, reading at the last report, and the difference |
 
 - **When:** at the send time (default `00:15`) after the end of a period: daily for the day before, weekly on Monday for the week before (Mon–Sun), monthly on the 1st for the month before. If the gateway was off at that time, the report goes out when it runs again; nothing is sent twice. A new report starts with the next period.
 - **Time base:** local time of the machine or UTC. In Docker the container runs on UTC unless the `TZ` variable is set, e.g. `TZ=Europe/Berlin`.
-- **Values written on change:** a value holds until the next one, so mean and energy weight each value by how long it held, and a value that has not changed for a long time still counts.
+- **Values written on change:** a value holds until the next one, so mean and integral weight each value by how long it held, and a value that has not changed for a long time still counts.
 - **Preview** shows the report of the last completed period in the browser; **Send now** mails it right away without changing the schedule.
 - Sending uses the SMTP settings (see below); what was sent is kept in `reports_state.json` in the data directory.
 

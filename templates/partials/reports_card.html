@@ -4,9 +4,10 @@
   <div class="card-body" style="padding:.75rem 1rem">
     <p class="text-sm text-muted mb-3">
       Daily, weekly and monthly e-mail with figures of selected signals from InfluxDB.
-      <strong>Value</strong>: time-weighted mean with the change to the period before, minimum and maximum
-      with their time, optionally the energy (value × hours).
-      <strong>Counter</strong>: meter reading at the end of the period and the change since the last report.
+      <strong>Trend value</strong> (e.g. power, temperature, pressure): time-weighted mean with the change to
+      the period before, minimum and maximum with their time, optionally the integral (value × hours, e.g. power → energy).
+      <strong>Counter reading</strong> (e.g. energy or operating-hours meter): reading at the end of the period
+      and the change since the last report.
     </p>
 
     <form action="/config/reports/settings" method="post" class="form-row" style="align-items:flex-end">
@@ -103,8 +104,8 @@
         <thead>
           <tr>
             <th>Signal</th><th>Kind</th><th>Unit</th>
-            <th title="Value only: also report value × hours, e.g. power → energy">Energy</th>
-            <th title="value·h × factor, e.g. 0.001 for W → kWh">Factor</th><th>Energy unit</th><th></th>
+            <th title="Trend values only: also report the integral = value × hours, e.g. power → energy, flow → volume">Integral</th>
+            <th title="value·h × factor, e.g. 0.001 for W → kWh, 1 for m³/h → m³">Factor</th><th>Integral unit</th><th></th>
           </tr>
         </thead>
         <tbody id="repSignals"></tbody>
@@ -133,23 +134,23 @@ function repSubLabel(id) { const s = REP_SUBS.find(x => x.id === id); return s ?
 function repSubId(label) { const s = REP_SUBS.find(x => x.label === label); return s ? s.id : ''; }
 
 function repAddSignal(sig) {
-  sig = sig || {subscription_id: '', kind: 'gauge', unit: '', energy: false, energy_factor: 1, energy_unit: 'kWh'};
+  sig = sig || {subscription_id: '', kind: 'gauge', unit: '', energy: false, energy_factor: 1, energy_unit: ''};
   const tr = document.createElement('tr');
   tr.innerHTML = `
     <td class="fit" style="width:45%"><input class="input input-sm rep-sig" list="repSubList" placeholder="Type to search subscriptions…" style="max-width:none"></td>
-    <td><select class="select select-sm rep-kind"><option value="gauge">Value</option><option value="counter">Counter</option></select></td>
+    <td><select class="select select-sm rep-kind"><option value="gauge">Trend value</option><option value="counter">Counter reading</option></select></td>
     <td><input class="input input-sm rep-unit" style="width:70px" placeholder="kW"></td>
     <td style="text-align:center"><input type="checkbox" class="rep-energy"></td>
     <td><input class="input input-sm rep-factor" type="number" step="any" style="width:80px"></td>
-    <td><input class="input input-sm rep-eunit" style="width:70px"></td>
+    <td><input class="input input-sm rep-eunit" style="width:70px" placeholder="kWh"></td>
     <td><button type="button" class="btn btn-ghost btn-xs" style="color:var(--red)" title="Remove">✕</button></td>`;
   tr.querySelector('.rep-sig').value = sig.subscription_id ? repSubLabel(sig.subscription_id) : '';
   tr.querySelector('.rep-kind').value = sig.kind;
   tr.querySelector('.rep-unit').value = sig.unit || '';
   tr.querySelector('.rep-energy').checked = !!sig.energy;
   tr.querySelector('.rep-factor').value = sig.energy_factor ?? 1;
-  tr.querySelector('.rep-eunit').value = sig.energy_unit || 'kWh';
-  const sync = () => {   // energy only for values
+  tr.querySelector('.rep-eunit').value = sig.energy_unit || '';
+  const sync = () => {   // integral only for trend values
     const gauge = tr.querySelector('.rep-kind').value === 'gauge';
     const on = gauge && tr.querySelector('.rep-energy').checked;
     tr.querySelector('.rep-energy').disabled = !gauge;
@@ -203,7 +204,7 @@ async function reportSave() {
     signals.push({subscription_id: id, kind: tr.querySelector('.rep-kind').value,
       unit: tr.querySelector('.rep-unit').value.trim(), energy: tr.querySelector('.rep-energy').checked,
       energy_factor: parseFloat(tr.querySelector('.rep-factor').value) || 1,
-      energy_unit: tr.querySelector('.rep-eunit').value.trim() || 'kWh'});
+      energy_unit: tr.querySelector('.rep-eunit').value.trim()});
   }
   const body = {id: repEditId, name: document.getElementById('repName').value,
     recipients: document.getElementById('repRecipients').value,
