@@ -39,14 +39,14 @@
           <span class="badge badge-mode">No</span>
           {% endif %}
         </td>
-        <td class="actions">
+        <td><div class="actions">
           <button type="button" class="btn btn-ghost btn-xs"
                   onclick="toggleEditRow('tag-edit-{{ tag.id }}')">Edit</button>
           <form action="/config/tags/{{ tag.id }}/delete" method="post" style="display:inline"
                 onsubmit="return confirm('Delete tag {{ tag.name }}?')">
             <button class="btn btn-danger btn-xs">Delete</button>
           </form>
-        </td>
+        </div></td>
       </tr>
       <tr id="tag-edit-{{ tag.id }}" style="display:none">
         <td colspan="7" style="padding:10px 12px;background:var(--panel);border-top:none">

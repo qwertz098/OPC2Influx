@@ -19,7 +19,7 @@
       {{ 'Active' if sub.enabled else 'Disabled' }}
     </span>
   </td>
-  <td class="actions">
+  <td><div class="actions">
     <button class="btn btn-ghost btn-xs"
             hx-get="/subscriptions/{{ sub.id }}/edit"
             hx-target="#edit-cell-{{ sub.id }}"
@@ -31,6 +31,6 @@
           onsubmit="return confirm('Delete this subscription?')">
       <button class="btn btn-danger btn-xs">Delete</button>
     </form>
-  </td>
+  </div></td>
 </tr>
 <tr><td id="edit-cell-{{ sub.id }}" colspan="10" style="padding:0;border:0;line-height:0;overflow:hidden"></td></tr>

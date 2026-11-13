@@ -41,7 +41,7 @@
             {{ 'Active' if rule.enabled else 'Disabled' }}
           </span>
         </td>
-        <td class="actions">
+        <td><div class="actions">
           <button type="button" class="btn btn-ghost btn-xs"
                   onclick="alarmRuleEdit('{{ rule.id }}')">Edit</button>
           <form action="/config/alarm-rules/{{ rule.id }}/toggle" method="post" style="display:inline">
@@ -51,7 +51,7 @@
                 onsubmit="return confirm('Delete this alarm rule?')">
             <button class="btn btn-danger btn-xs">Delete</button>
           </form>
-        </td>
+        </div></td>
       </tr>
       <tr><td id="alarm-edit-cell-{{ rule.id }}" colspan="7" style="padding:0;border:0"></td></tr>
       {% endfor %}

@@ -63,11 +63,11 @@
         {% set matched = subscriptions | selectattr("id", "equalto", rule.subscription_id) | list %}
         {% set sub = matched[0] if matched else None %}
         <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
-          <td>{{ rule.name or '—' }}</td>
-          <td class="text-sm">
+          <td style="white-space:nowrap">{{ rule.name or '—' }}</td>
+          <td class="text-sm" style="overflow-wrap:normal;word-break:normal">
             {% if sub %}
               <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
-              <span class="text-muted text-xs"> · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</span>
+              <span class="text-muted text-xs"> · {{ ((sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name) | e) | replace(".", ".<wbr>" | safe) }}</span>
             {% else %}
               <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
             {% endif %}
@@ -80,7 +80,7 @@
           <td class="text-sm">
             {% if rule.latch %}<span class="text-muted text-xs">—</span>{% else %}{{ rule.cooldown_seconds }} s{% endif %}
           </td>
-          <td>
+          <td style="white-space:nowrap">
             {% if rule.latch %}
             <span class="badge badge-mode">latch</span>
             {% else %}
@@ -95,7 +95,7 @@
               {{ 'Active' if rule.enabled else 'Disabled' }}
             </span>
           </td>
-          <td class="actions">
+          <td><div class="actions">
             <button type="button" class="btn btn-ghost btn-xs"
                     onclick="alarmRuleEdit('{{ rule.id }}')">Edit</button>
             <form action="/config/alarm-rules/{{ rule.id }}/toggle" method="post" style="display:inline">
@@ -105,7 +105,7 @@
                   onsubmit="return confirm('Delete this alarm rule?')">
               <button class="btn btn-danger btn-xs">Delete</button>
             </form>
-          </td>
+          </div></td>
         </tr>
         <tr><td id="alarm-edit-cell-{{ rule.id }}" colspan="9" style="padding:0;border:0"></td></tr>
         {% endfor %}
@@ -198,11 +198,11 @@
         {% set matched = subscriptions | selectattr("id", "equalto", rule.subscription_id) | list %}
         {% set sub = matched[0] if matched else None %}
         <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
-          <td>{{ rule.name or '—' }}</td>
-          <td class="text-sm">
+          <td style="white-space:nowrap">{{ rule.name or '—' }}</td>
+          <td class="text-sm" style="overflow-wrap:normal;word-break:normal">
             {% if sub %}
               <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
-              <span class="text-muted text-xs"> · {{ sub.influxdb.measurement }}.{{ sub.influxdb.field_name }}</span>
+              <span class="text-muted text-xs"> · {{ ((sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name) | e) | replace(".", ".<wbr>" | safe) }}</span>
             {% else %}
               <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
             {% endif %}
@@ -219,7 +219,7 @@
               {{ 'Active' if rule.enabled else 'Disabled' }}
             </span>
           </td>
-          <td class="actions">
+          <td><div class="actions">
             <button type="button" class="btn btn-ghost btn-xs"
                     onclick="staleRuleEdit('{{ rule.id }}')">Edit</button>
             <form action="/config/stale-watchdog/{{ rule.id }}/toggle" method="post" style="display:inline">
@@ -229,7 +229,7 @@
                   onsubmit="return confirm('Delete this stale-value watchdog rule?')">
               <button class="btn btn-danger btn-xs">Delete</button>
             </form>
-          </td>
+          </div></td>
         </tr>
         <tr><td id="stale-edit-cell-{{ rule.id }}" colspan="7" style="padding:0;border:0"></td></tr>
         {% endfor %}
