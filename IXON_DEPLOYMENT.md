@@ -111,7 +111,7 @@ chmod +x build_and_push_edge.sh
 Both scripts:
 1. Create a buildx builder named `secure-edge-pro-<gateway-ip>` (dots replaced by dashes) that is allowed to push to `<gateway-ip>:5000` over plain HTTP. The registry config is generated from `EDGE_IP`, so a different gateway IP automatically gets its own builder
 2. Cross-compile the Docker image for `linux/arm64/v8`
-3. Push the image to `<gateway-ip>:5000/opcua2influxdb:latest`
+3. Push the image to `<gateway-ip>:5000/opcua2influxdb_<version>:latest`, e.g. `opcua2influxdb_v0.1.8` (or `opcua2influxdb_v0.1.8-3-gabc1234` for a build after that release). The version comes from `git describe` and is part of the image **name**, because the gateway only picks up an update when the image name changes; the script prints the name to select at the end.
 
 To use a different gateway IP or image name, set environment variables before running:
 
@@ -169,14 +169,14 @@ Expected output:
 ## Step 3: Create the Container on the Gateway
 
 1. Open the gateway web interface at **http://\<gateway-ip\>** in your browser
-2. Navigate to **Docker** → **Images** — you should see `opcua2influxdb:latest`
+2. Navigate to **Docker** → **Images** — you should see `opcua2influxdb_<version>:latest`
 3. Click **Create Container** and configure:
 
 ### Container Settings
 
 | Setting | Value |
 |---|---|
-| **Image** | `opcua2influxdb:latest` |
+| **Image** | `opcua2influxdb_<version>:latest` (the name the build script printed) |
 | **Container name** | `opcua2influxdb` (or any name) |
 | **Restart policy** | `unless-stopped` |
 
@@ -341,3 +341,7 @@ curl http://<gateway-ip>:5000/v2/opcua2influxdb/tags/list
 # Access the app
 # http://<gateway-ip>:8000
 ```
+
+### Updating to a new version
+
+Run the build script again: it pulls the newest code and pushes it under a new image name (`opcua2influxdb_<new version>`). In the gateway web interface, change the container's image to that name (or recreate the container with it), keeping the same named volumes for `/config` and `/data` so configuration and SQLite data carry over. Old images can then be deleted under **Docker** → **Images** to free space.
