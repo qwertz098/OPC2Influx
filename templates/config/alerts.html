@@ -44,7 +44,7 @@
   <div class="card-body" style="padding:.75rem 1rem">
 
     {% if rules %}
-    <table class="table" style="margin-bottom:1rem">
+    <table class="table rule-table" style="margin-bottom:1rem">
       <thead>
         <tr>
           <th>Name</th>
@@ -63,11 +63,12 @@
         {% set matched = subscriptions | selectattr("id", "equalto", rule.subscription_id) | list %}
         {% set sub = matched[0] if matched else None %}
         <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
-          <td style="white-space:nowrap">{{ rule.name or '—' }}</td>
-          <td class="text-sm" style="overflow-wrap:normal;word-break:normal">
+          <td>{{ rule.name or '—' }}</td>
+          <td class="text-sm rule-signal">
             {% if sub %}
-              <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
-              <span class="text-muted text-xs"> · {{ ((sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name) | e) | replace(".", ".<wbr>" | safe) }}</span>
+              {% set sig_path = sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name %}
+              <div class="ellipsis" title="{{ sub.display_name or sub.node_id }}&#10;{{ sig_path }}&#10;ID {{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</div>
+              <div class="ellipsis text-muted text-xs" title="{{ sig_path }}">{{ sig_path }}</div>
             {% else %}
               <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
             {% endif %}
@@ -80,7 +81,7 @@
           <td class="text-sm">
             {% if rule.latch %}<span class="text-muted text-xs">—</span>{% else %}{{ rule.cooldown_seconds }} s{% endif %}
           </td>
-          <td style="white-space:nowrap">
+          <td>
             {% if rule.latch %}
             <span class="badge badge-mode">latch</span>
             {% else %}
@@ -181,7 +182,7 @@
     </p>
 
     {% if stale_rules %}
-    <table class="table" style="margin-bottom:1rem">
+    <table class="table rule-table" style="margin-bottom:1rem">
       <thead>
         <tr>
           <th>Name</th>
@@ -198,11 +199,12 @@
         {% set matched = subscriptions | selectattr("id", "equalto", rule.subscription_id) | list %}
         {% set sub = matched[0] if matched else None %}
         <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
-          <td style="white-space:nowrap">{{ rule.name or '—' }}</td>
-          <td class="text-sm" style="overflow-wrap:normal;word-break:normal">
+          <td>{{ rule.name or '—' }}</td>
+          <td class="text-sm rule-signal">
             {% if sub %}
-              <span title="{{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</span>
-              <span class="text-muted text-xs"> · {{ ((sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name) | e) | replace(".", ".<wbr>" | safe) }}</span>
+              {% set sig_path = sub.influxdb.measurement ~ "." ~ sub.influxdb.field_name %}
+              <div class="ellipsis" title="{{ sub.display_name or sub.node_id }}&#10;{{ sig_path }}&#10;ID {{ rule.subscription_id }}">{{ sub.display_name or sub.node_id }}</div>
+              <div class="ellipsis text-muted text-xs" title="{{ sig_path }}">{{ sig_path }}</div>
             {% else %}
               <span class="text-muted mono text-xs">{{ rule.subscription_id }}</span>
             {% endif %}

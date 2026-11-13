@@ -376,3 +376,10 @@ tr[id^="edit-"]:empty { display: none; }
 /* Blue (i) with the explanation in its tooltip */
 .info-icon { display: inline-flex; align-items: center; color: var(--accent); cursor: help; }
 .info-icon:hover { color: var(--accent-h); }
+
+/* Rule tables (alarm / stale rules): every column keeps its content on one
+   line at its natural width; the Signal column takes the remaining space and
+   cuts long names with "…" (full text on hover). */
+.rule-table th, .rule-table td { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+.rule-table td.rule-signal { width: 100%; max-width: 0; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
