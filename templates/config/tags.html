@@ -7,10 +7,31 @@
 </div>
 
 <div class="card mb-3">
+  <div class="card-body text-sm">
+    <p style="margin:0 0 6px"><strong>What tags are for.</strong>
+      A tag is a label (key = value) that InfluxDB stores with every value of a signal, e.g.
+      <code>machine=TG-01</code>. Tags are indexed, so in InfluxDB queries and dashboards (e.g. Grafana)
+      you can filter and group by them: show all signals of one machine, or compare
+      the same signal across several machines that write into one bucket.</p>
+    <ul style="margin:0 0 6px 18px;padding:0">
+      <li><strong>Static</strong>: a fixed value, e.g. site, machine or line name.</li>
+      <li><strong>Dynamic</strong>: the value is read from another OPC UA node next to the signal,
+        e.g. the recipe or batch name, and changes with it.</li>
+      <li><strong>Per signal</strong>: switch tags on or off with the small tag buttons in the
+        Tags column on the <a href="/subscriptions">Subscriptions</a> page.
+        <strong>Default Active</strong> switches the tag on for signals subscribed from now on.</li>
+    </ul>
+    <p class="text-muted" style="margin:0">Tags only go to InfluxDB; the SQLite files have no tags.
+      Tags that apply to every signal of a server can also be set on the
+      <a href="/config/servers">Servers</a> page (Static Tags).</p>
+  </div>
+</div>
+
+<div class="card mb-3">
   <div class="card-header">Configured Tags</div>
   <div class="card-body" style="padding:0">
     {% if tags %}
-    <table class="table">
+    <table class="table fit-table">
       <thead>
         <tr>
           <th>Name</th>
@@ -25,13 +46,12 @@
       <tbody>
       {% for tag in tags %}
       <tr>
-        <td>{{ tag.name }}</td>
+        <td class="fit" style="width:30%"><div class="ellipsis" title="{{ tag.name }}">{{ tag.name }}</div></td>
         <td><span class="badge badge-mode {% if tag.is_dynamic %}text-italic{% endif %}">{{ tag.short_name }}</span></td>
         <td class="mono text-sm">{{ tag.key }}</td>
         <td class="text-sm">{{ 'Dynamic' if tag.is_dynamic else 'Static' }}</td>
-        <td class="mono text-sm text-muted">
-          {% if tag.is_dynamic %}{{ tag.relative_path }}{% else %}{{ tag.static_value }}{% endif %}
-        </td>
+        {% set tag_value = tag.relative_path if tag.is_dynamic else tag.static_value %}
+        <td class="fit mono text-sm text-muted" style="width:70%"><div class="ellipsis" title="{{ tag_value }}">{{ tag_value }}</div></td>
         <td class="text-center">
           {% if tag.default_active %}
           <span class="badge badge-ok">Yes</span>
@@ -90,7 +110,7 @@
                   <option value="false" {% if not tag.default_active %}selected{% endif %}>No</option>
                 </select>
               </div>
-              <div class="form-group" style="align-self:flex-end">
+              <div class="form-buttons">
                 <button type="submit" class="btn btn-primary btn-xs">Save</button>
                 <button type="button" class="btn btn-ghost btn-xs"
                         onclick="toggleEditRow('tag-edit-{{ tag.id }}')">Cancel</button>

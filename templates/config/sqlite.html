@@ -8,7 +8,7 @@
 
 {% if targets %}
 <div class="card mb-4">
-  <table class="table">
+  <table class="table fit-table">
     <thead>
       <tr>
         <th>Name</th>
@@ -25,8 +25,8 @@
       {% for t in targets %}
       {% set status = sqlite_status.get(t.id) %}
       <tr class="{% if not t.enabled %}opacity-50{% endif %}">
-        <td>{{ t.display_name }}</td>
-        <td class="mono text-sm">{{ t.file_path }}</td>
+        <td class="fit" style="width:35%"><div class="ellipsis" title="{{ t.display_name }}">{{ t.display_name }}</div></td>
+        <td class="fit mono text-sm" style="width:65%"><div class="ellipsis" title="{{ t.file_path }}">{{ t.file_path }}</div></td>
         <td class="text-sm">{{ t.write_interval_seconds }} s</td>
         <td>
           {% if not t.enabled %}

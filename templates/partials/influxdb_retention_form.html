@@ -33,9 +33,9 @@
             <span class="form-hint">Auto lets InfluxDB pick a shard-group size based on the retention duration. Manual sets an explicit size in hours.</span>
           </div>
         </div>
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary">Save Retention</button>
-          <button type="button" class="btn btn-ghost"
+        <div class="form-actions form-actions--edit">
+          <button type="submit" class="btn btn-primary btn-xs">Save Retention</button>
+          <button type="button" class="btn btn-ghost btn-xs"
                   onclick="var r=document.getElementById('retention-{{ t.id | slugify }}');r.innerHTML='';r.style.display='none'">Cancel</button>
           <span id="retention-spinner-{{ t.id | slugify }}" class="htmx-indicator badge badge-info">⏳ Saving…</span>
           <span id="retention-result-{{ t.id | slugify }}"></span>
