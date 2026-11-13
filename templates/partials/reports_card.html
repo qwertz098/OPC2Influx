@@ -6,6 +6,8 @@
       Daily, weekly and monthly e-mail with figures of selected signals from InfluxDB.
       <strong>Trend value</strong> (e.g. power, temperature, pressure): time-weighted mean with the change to
       the period before, minimum and maximum with their time, optionally the integral (value × hours, e.g. power → energy).
+      <strong>Event</strong> (on/off signal, e.g. an error bit): number of rising ↑ or falling ↓ edges and the time
+      it was on, each compared with the period before.
       <strong>Counter reading</strong> (e.g. energy or operating-hours meter): reading at the end of the period,
       the change since the last report and how it compares with the change in the period before.
     </p>
@@ -138,14 +140,14 @@ function repAddSignal(sig) {
   const tr = document.createElement('tr');
   tr.innerHTML = `
     <td class="fit" style="width:45%"><input class="input input-sm rep-sig" list="repSubList" placeholder="Type to search subscriptions…" style="max-width:none"></td>
-    <td><select class="select select-sm rep-kind"><option value="gauge">Trend value</option><option value="counter">Counter reading</option></select></td>
+    <td><select class="select select-sm rep-kind"><option value="gauge">Trend value</option><option value="counter">Counter reading</option><option value="event:rising">Event ↑ (rising)</option><option value="event:falling">Event ↓ (falling)</option></select></td>
     <td><input class="input input-sm rep-unit" style="width:70px" placeholder="kW"></td>
     <td style="text-align:center"><input type="checkbox" class="rep-energy"></td>
     <td><input class="input input-sm rep-factor" type="number" step="any" style="width:80px"></td>
     <td><input class="input input-sm rep-eunit" style="width:70px" placeholder="kWh"></td>
     <td><button type="button" class="btn btn-ghost btn-xs" style="color:var(--red)" title="Remove">✕</button></td>`;
   tr.querySelector('.rep-sig').value = sig.subscription_id ? repSubLabel(sig.subscription_id) : '';
-  tr.querySelector('.rep-kind').value = sig.kind;
+  tr.querySelector('.rep-kind').value = sig.kind === 'event' ? 'event:' + (sig.edge || 'rising') : sig.kind;
   tr.querySelector('.rep-unit').value = sig.unit || '';
   tr.querySelector('.rep-energy').checked = !!sig.energy;
   tr.querySelector('.rep-factor').value = sig.energy_factor ?? 1;
@@ -153,6 +155,7 @@ function repAddSignal(sig) {
   const sync = () => {   // integral only for trend values
     const gauge = tr.querySelector('.rep-kind').value === 'gauge';
     const on = gauge && tr.querySelector('.rep-energy').checked;
+    tr.querySelector('.rep-unit').disabled = tr.querySelector('.rep-kind').value.startsWith('event');
     tr.querySelector('.rep-energy').disabled = !gauge;
     tr.querySelector('.rep-factor').disabled = tr.querySelector('.rep-eunit').disabled = !on;
   };
@@ -201,7 +204,8 @@ async function reportSave() {
     if (!label) continue;
     const id = repSubId(label);
     if (!id) { msg.textContent = 'Unknown signal: ' + label; msg.style.color = 'var(--red)'; return; }
-    signals.push({subscription_id: id, kind: tr.querySelector('.rep-kind').value,
+    const [kind, edge] = tr.querySelector('.rep-kind').value.split(':');
+    signals.push({subscription_id: id, kind, edge: edge || 'rising',
       unit: tr.querySelector('.rep-unit').value.trim(), energy: tr.querySelector('.rep-energy').checked,
       energy_factor: parseFloat(tr.querySelector('.rep-factor').value) || 1,
       energy_unit: tr.querySelector('.rep-eunit').value.trim()});

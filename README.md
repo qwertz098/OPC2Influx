@@ -480,6 +480,7 @@ Daily, weekly and monthly e-mails with figures of selected signals from InfluxDB
 | Kind | Figures |
 |---|---|
 | **Trend value** (e.g. power, temperature, pressure, flow) | time-weighted mean and its change to the period before, minimum and maximum with their time, optionally the **integral** = value × hours with a factor and unit (e.g. power → energy with `0.001` for W → kWh, flow m³/h → volume m³) and its change |
+| **Event** (on/off signal, e.g. an error or alarm bit) | number of rising edges (off → on), or optionally falling edges (on → off), and the time the signal was on, each with the period before. Any value other than 0 / `false` counts as on; the value before the period counts too, so an edge right at the start is seen |
 | **Counter reading** (e.g. energy, volume or operating-hours meter) | reading at the end of the period, reading at the last report, the difference (e.g. the energy of the day), the difference of the period before and the change between the two |
 
 - **When:** at the send time (default `00:15`) after the end of a period: daily for the day before, weekly on Monday for the week before (Mon–Sun), monthly on the 1st for the month before. If the gateway was off at that time, the report goes out when it runs again; nothing is sent twice. A new report starts with the next period.

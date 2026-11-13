@@ -41,6 +41,29 @@ def fmt_when(t: Optional[datetime], tz_mode: str) -> str:
     return local.strftime("%d.%m. %H:%M")
 
 
+def fmt_duration(hours: Optional[float]) -> str:
+    """Hours → '2 h 15 min' / '45 min' / '0 min'."""
+    if hours is None:
+        return "–"
+    minutes = round(hours * 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    h, m = divmod(minutes, 60)
+    if h >= 48:
+        return f"{h / 24:.1f} d"
+    return f"{h} h {m} min" if m else f"{h} h"
+
+
+def fmt_count_change(cur: Optional[int], prev: Optional[int]) -> str:
+    if cur is None or prev is None:
+        return "–"
+    d = cur - prev
+    text = f"{'+' if d >= 0 else '−'}{abs(d)}"
+    if prev:
+        text += f" ({'+' if d >= 0 else '−'}{abs(d) / prev * 100:.0f} %)"
+    return text
+
+
 def _with_unit(v: Optional[float], unit: str) -> str:
     return f"{fmt_num(v)} {unit}".strip() if v is not None else "–"
 
@@ -70,6 +93,15 @@ def _counter_rows(sigs: list[SignalFigures]) -> list[list[str]]:
              fmt_change(s.counter_change, s.prev_counter_change), s.error] for s in sigs]
 
 
+def _event_rows(sigs: list[SignalFigures]) -> list[list[str]]:
+    return [[f"{s.label} {'↓' if s.edge == 'falling' else '↑'}",
+             "–" if s.events is None else str(s.events),
+             "–" if s.prev_events is None else str(s.prev_events),
+             fmt_count_change(s.events, s.prev_events),
+             fmt_duration(s.active_h), fmt_duration(s.prev_active_h), s.error] for s in sigs]
+
+
+EVENT_HEAD = ["Event (edges)", "Count", "Count before", "vs. previous", "Time on", "Time on before", ""]
 GAUGE_HEAD = ["Trend value", "Mean", "vs. previous", "Min", "Max", "Integral", "vs. previous", ""]
 COUNTER_HEAD = ["Counter reading", "Reading", "Last report", "Change", "Change before", "vs. previous", ""]
 
@@ -84,7 +116,9 @@ def text_body(fig: ReportFigures, tz_mode: str) -> str:
         lines += ["", f"Error: {fig.error}"]
     gauges = [s for s in fig.signals if s.kind == "gauge"]
     counters = [s for s in fig.signals if s.kind == "counter"]
-    for head, rows in ((GAUGE_HEAD, _gauge_rows(gauges, tz_mode)), (COUNTER_HEAD, _counter_rows(counters))):
+    events = [s for s in fig.signals if s.kind == "event"]
+    for head, rows in ((GAUGE_HEAD, _gauge_rows(gauges, tz_mode)), (COUNTER_HEAD, _counter_rows(counters)),
+                       (EVENT_HEAD, _event_rows(events))):
         if not rows:
             continue
         lines.append("")
@@ -133,6 +167,10 @@ def html_body(fig: ReportFigures, tz_mode: str) -> str:
         parts.append(table(head, rows))
     if counters:
         parts.append(table(COUNTER_HEAD, _counter_rows(counters)))
+    events = [s for s in fig.signals if s.kind == "event"]
+    if events:
+        parts.append(table(EVENT_HEAD, _event_rows(events)))
     parts.append('<div style="color:#999;font-size:11px">"vs. previous": difference to the period before. '
+                 "↑ rising edges (off → on), ↓ falling edges (on → off). "
                  "Mean and integral are time-weighted: a value holds until the next one.</div></div>")
     return "\n".join(parts)

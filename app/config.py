@@ -445,7 +445,9 @@ class ReportSignalConfig(BaseModel):
     # gauge = trend value: time-weighted mean, min, max (optionally the integral
     #         value × hours, stored as "energy" e.g. power → energy)
     # counter = counter reading at the period end and the change since the last report
-    kind: Literal["gauge", "counter"] = "gauge"
+    # event   = on/off signal (e.g. an error bit): rising edges and time active
+    kind: Literal["gauge", "counter", "event"] = "gauge"
+    edge: Literal["rising", "falling"] = "rising"   # event: which edges are counted
     unit: str = ""                  # shown after the values, e.g. kW
     energy: bool = False            # gauge only: also report the integral value × hours
     energy_factor: float = 1.0      # value·h × factor, e.g. 0.001 for W → kWh

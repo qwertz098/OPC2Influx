@@ -7,6 +7,11 @@ gauge   – time-weighted mean, min and max (with time) of the period, the mean
           one: the signal is resampled to one value per minute, gaps are
           filled with the previous value, and mean / energy are taken from
           that series.
+event   – on/off signal (any value other than 0 / false is "on"): number of
+          rising edges (off → on) or, if chosen, falling edges (on → off),
+          and the time it was on, each with the
+          period before. The value before the period counts, so an edge right
+          at the start is seen.
 counter – meter reading at the end of the period, of the period before and
           of the one before that: the change since the last report and the
           change in the period before, to compare the two.
@@ -19,7 +24,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.config import ReportConfig, ReportSignalConfig, apply_name_strips
-from app.influxdb.flux import signal_source
+from app.influxdb.flux import flux_time, signal_source
 from app.reports.periods import Period
 
 logger = logging.getLogger(__name__)
@@ -32,6 +37,7 @@ class SignalFigures:
     label: str
     kind: str
     unit: str = ""
+    edge: str = "rising"
     # gauge
     mean: Optional[float] = None
     prev_mean: Optional[float] = None
@@ -42,6 +48,11 @@ class SignalFigures:
     energy: Optional[float] = None
     prev_energy: Optional[float] = None
     energy_unit: str = ""
+    # event
+    events: Optional[int] = None
+    prev_events: Optional[int] = None
+    active_h: Optional[float] = None
+    prev_active_h: Optional[float] = None
     # counter
     reading: Optional[float] = None
     prev_reading: Optional[float] = None
@@ -117,6 +128,37 @@ def gauge_flux(src_period: str, src_prev: str, seed_period: str, seed_prev: str,
     return "\n".join(parts) + "\n"
 
 
+def event_flux(src_period: str, src_prev: str, seed_period: str, seed_prev: str,
+               before_start: str, before_prev_start: str, edge: str = "rising") -> str:
+    """Flux for one event signal: rising edges and active fraction per period.
+
+    before_*: a time just before the period start; the last value before the
+    period is put there, so an edge at the very start is counted.
+    """
+    on = "map(fn: (r) => ({r with _value: if r._value != 0.0 then 1.0 else 0.0}))"
+    # difference() of the 0/1 values: +1 = rising edge, -1 = falling edge
+    edge_filter = "r._value < 0.0" if edge == "falling" else "r._value > 0.0"
+    window = "aggregateWindow(every: 1m, fn: mean, createEmpty: true) |> fill(usePrevious: true)"
+
+    def one(name: str, before: str) -> str:
+        return (
+            f"{name}b = {name} |> {on}\n"
+            f"{name}sb = {name}seed |> last() |> {on}\n"
+            f'{name}sv = {name}sb |> findColumn(fn: (key) => true, column: "_value")\n'
+            f"union(tables: [{name}sb |> map(fn: (r) => ({{r with _time: {before}}})), {name}b])\n"
+            f'  |> sort(columns: ["_time"]) |> difference() |> filter(fn: (r) => {edge_filter})\n'
+            f'  |> count() |> toFloat() |> set(key: "f", value: "{name}_edges") |> yield(name: "{name}_edges")\n'
+            f"{name}b |> {window}\n"
+            f"  |> map(fn: (r) => ({{r with _value: if exists r._value then r._value\n"
+            f"                      else if length(arr: {name}sv) > 0 then {name}sv[0] else r._value}}))\n"
+            f'  |> mean() |> set(key: "f", value: "{name}_on") |> yield(name: "{name}_on")\n'
+            f'{name}sb |> set(key: "f", value: "{name}_seed") |> yield(name: "{name}_seed")\n'
+        )
+
+    return (f"cur = {src_period}\nprev = {src_prev}\ncurseed = {seed_period}\nprevseed = {seed_prev}\n"
+            + one("cur", before_start) + one("prev", before_prev_start))
+
+
 def counter_flux(src_end: str, src_prev_end: str, src_prev2_end: str) -> str:
     return (
         f"cur = {src_end}\nprev = {src_prev_end}\nprev2 = {src_prev2_end}\n"
@@ -151,7 +193,7 @@ async def compute(state, report: ReportConfig, period: Period) -> ReportFigures:
         for sig in report.signals:
             sub = subs.get(sig.subscription_id)
             fig = SignalFigures(label=sig.subscription_id, kind=sig.kind, unit=sig.unit,
-                                energy_unit=sig.energy_unit)
+                                energy_unit=sig.energy_unit, edge=sig.edge)
             result.signals.append(fig)
             if sub is None:
                 fig.error = "subscription not found"
@@ -160,7 +202,14 @@ async def compute(state, report: ReportConfig, period: Period) -> ReportFigures:
             fig.label = sub.display_name or measurement
             src = lambda a, b: signal_source(target.bucket, measurement, sub.influxdb.field_name,  # noqa: E731
                                              target.type_suffix, a, b)
-            if sig.kind == "counter":
+            if sig.kind == "event":
+                second = timedelta(seconds=1)
+                flux = event_flux(src(period.start, period.end), src(period.prev_start, period.start),
+                                  src(period.start - COUNTER_LOOKBACK, period.start),
+                                  src(period.prev_start - COUNTER_LOOKBACK, period.prev_start),
+                                  flux_time(period.start - second), flux_time(period.prev_start - second),
+                                  sig.edge)
+            elif sig.kind == "counter":
                 flux = counter_flux(src(period.end - COUNTER_LOOKBACK, period.end),
                                     src(period.start - COUNTER_LOOKBACK, period.start),
                                     src(period.prev_start - COUNTER_LOOKBACK, period.prev_start))
@@ -186,6 +235,16 @@ async def compute(state, report: ReportConfig, period: Period) -> ReportFigures:
 def _apply(fig: SignalFigures, sig: ReportSignalConfig, values: dict,
            hours: float = 0.0, prev_hours: float = 0.0) -> None:
     get = lambda k: values[k][0] if k in values else None  # noqa: E731
+    if sig.kind == "event":
+        for prefix, h, ev, act in (("cur", hours, "events", "active_h"), ("prev", prev_hours, "prev_events", "prev_active_h")):
+            on, seed = get(f"{prefix}_on"), get(f"{prefix}_seed")
+            if on is None and seed is not None:
+                on = seed            # no value inside the period: the one before held
+            if on is None:
+                continue             # no data at all
+            setattr(fig, ev, int(get(f"{prefix}_edges") or 0))
+            setattr(fig, act, on * h)
+        return
     if sig.kind == "counter":
         fig.reading, fig.prev_reading, fig.prev2_reading = get("reading"), get("prev_reading"), get("prev2_reading")
         return

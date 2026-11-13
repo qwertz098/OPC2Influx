@@ -172,3 +172,50 @@ def test_scheduler_skips_incomplete_reports(sent_file, monkeypatch):
                                  signals=[ReportSignalConfig(subscription_id="s")])])
     asyncio.run(S.ReportScheduler().tick(state))
     assert calls == []
+
+
+# ─── Events ──────────────────────────────────────────────────────────────────
+def test_event_flux_edge_direction():
+    from app.reports.compute import event_flux
+    rising = event_flux("A", "B", "C", "D", "T", "U")
+    falling = event_flux("A", "B", "C", "D", "T", "U", "falling")
+    assert "r._value > 0.0" in rising and "r._value < 0.0" not in rising
+    assert "r._value < 0.0" in falling
+    assert not any(line.lstrip().startswith("(") for line in rising.splitlines())
+
+
+def test_apply_event():
+    fig = SignalFigures(label="err", kind="event")
+    _apply(fig, ReportSignalConfig(subscription_id="e", kind="event"),
+           {"cur_edges": (3.0, None), "cur_on": (0.25, None),
+            "prev_seed": (1.0, None)},            # period before: no value inside, was on all along
+           hours=24, prev_hours=24)
+    assert (fig.events, fig.active_h) == (3, 6.0)
+    assert (fig.prev_events, fig.prev_active_h) == (0, 24.0)
+
+
+def test_apply_event_without_data():
+    fig = SignalFigures(label="err", kind="event")
+    _apply(fig, ReportSignalConfig(subscription_id="e", kind="event"), {}, hours=24, prev_hours=24)
+    assert fig.events is None and fig.active_h is None
+
+
+def test_event_formatting():
+    from app.reports.render import fmt_count_change, fmt_duration
+    assert fmt_duration(None) == "–"
+    assert fmt_duration(0.75) == "45 min"
+    assert fmt_duration(2 + 20 / 60) == "2 h 20 min"
+    assert fmt_duration(3) == "3 h"
+    assert fmt_duration(72) == "3.0 d"
+    assert fmt_count_change(3, 1) == "+2 (+200 %)"
+    assert fmt_count_change(0, 2) == "−2 (−100 %)"
+    assert fmt_count_change(3, 0) == "+3"
+
+
+def test_event_in_mail():
+    fig = _figures()
+    fig.signals.append(SignalFigures(label="Error", kind="event", edge="falling", events=2, prev_events=4,
+                                     active_h=0.5, prev_active_h=1.0))
+    text = text_body(fig, "utc")
+    assert "Error ↓" in text and "Count: 2" in text and "−2 (−50 %)" in text and "Time on: 30 min" in text
+    assert "Event (edges)" in html_body(fig, "utc")
