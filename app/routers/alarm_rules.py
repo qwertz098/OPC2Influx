@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -7,6 +9,15 @@ from fastapi.templating import Jinja2Templates
 from app.config import AlarmRuleConfig, save_alarm_rules
 from app.dependencies import get_state
 from app.state import RuntimeState
+
+
+def _quiet(state: RuntimeState, rule: AlarmRuleConfig) -> None:
+    """Remember a just saved / enabled rule: if its condition is already met at
+    the next check, that counts as already reported (see AlarmRuleChecker)."""
+    if rule.quiet_setup and rule.enabled:
+        state.alarm_quiet_setup[rule.id] = datetime.now(timezone.utc)
+    else:
+        state.alarm_quiet_setup.pop(rule.id, None)
 
 router = APIRouter(prefix="/config/alarm-rules")
 templates = Jinja2Templates(directory="templates")
@@ -29,8 +40,10 @@ async def add_rule(request: Request, state: RuntimeState = Depends(get_state)):
         alert_delay_seconds=int(form.get("alert_delay_seconds") or 0),
         latch=form.get("latch") == "true",
         send_email=form.get("send_email") == "true",
+        quiet_setup=form.get("quiet_setup") == "true",
     )
     state.config.alarm_rules.rules.append(rule)
+    _quiet(state, rule)
     save_alarm_rules(state.config.alarm_rules, state.config_dir)
     return RedirectResponse("/config/alerts", status_code=303)
 
@@ -61,6 +74,8 @@ async def update_rule(rule_id: str, request: Request, state: RuntimeState = Depe
             rule.alert_delay_seconds = int(form.get("alert_delay_seconds") or 0)
             rule.latch = form.get("latch") == "true"
             rule.send_email = form.get("send_email") == "true"
+            rule.quiet_setup = form.get("quiet_setup") == "true"
+            _quiet(state, rule)
             break
     save_alarm_rules(state.config.alarm_rules, state.config_dir)
     return RedirectResponse("/config/alerts", status_code=303)
@@ -80,6 +95,7 @@ async def toggle_rule(rule_id: str, state: RuntimeState = Depends(get_state)):
     for rule in state.config.alarm_rules.rules:
         if rule.id == rule_id:
             rule.enabled = not rule.enabled
+            _quiet(state, rule)
             break
     save_alarm_rules(state.config.alarm_rules, state.config_dir)
     return RedirectResponse("/config/alerts", status_code=303)

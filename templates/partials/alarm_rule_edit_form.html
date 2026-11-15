@@ -42,6 +42,10 @@
             <input type="checkbox" name="send_email" value="true" {% if rule.send_email %}checked{% endif %}>
             Send email
           </label>
+          <label class="checkbox-label" style="margin-top:4px" title="If the condition is already met when you save (or enable) the rule, that counts as already reported: no alert now. Latch alerts once it has cleared and comes back, repeat after the cooldown.">
+            <input type="checkbox" name="quiet_setup" value="true" {% if rule.quiet_setup %}checked{% endif %}>
+            Quiet setup
+          </label>
         </div>
       </div>
       <div class="form-actions form-actions--edit">
