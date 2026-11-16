@@ -7,11 +7,16 @@
           <label class="form-label">Display Name</label>
           <input class="input" type="text" name="display_name" value="{{ srv.display_name }}" required>
         </div>
+        {% if srv.protocol != 'modbus' %}
         <div class="form-group">
           <label class="form-label">Endpoint URL</label>
           <input class="input" type="text" name="endpoint_url" value="{{ srv.endpoint_url }}" required>
         </div>
+        {% endif %}
       </div>
+      {% if srv.protocol == 'modbus' %}
+      {% with mb = srv.modbus, url = srv.endpoint_url %}{% include "partials/modbus_server_fields.html" %}{% endwith %}
+      {% else %}
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Security Mode</label>
@@ -60,6 +65,7 @@
           <input class="input" type="password" name="password" autocomplete="current-password">
         </div>
       </div>
+      {% endif %}
       <div class="form-row">
         <div class="form-group" style="max-width:200px">
           <label class="form-label">Reconnect Interval (s)</label>

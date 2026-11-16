@@ -109,9 +109,19 @@ class ServerStaticTag(BaseModel):
     value: str
 
 
+class ModbusServerSettings(BaseModel):
+    """Modbus TCP connection (ServerConfig.protocol == "modbus"; endpoint_url = modbus-tcp://host:port)."""
+    unit_id: int = 1                 # default unit / slave id of the registers
+    timeout_ms: int = 2000
+    order: Literal["ABCD", "CDAB", "BADC", "DCBA"] = "ABCD"   # default byte / word order
+    max_registers: int = 125         # per read request (some devices accept fewer)
+    max_gap: int = 10                # unused registers read along to save requests
+
+
 class ServerConfig(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     display_name: str
+    protocol: Literal["opcua", "modbus"] = "opcua"
     endpoint_url: str
     security_mode: Literal["None", "Sign", "SignAndEncrypt"] = "None"
     security_policy: str = "Basic256Sha256"
@@ -123,6 +133,7 @@ class ServerConfig(BaseModel):
     static_tags: list[ServerStaticTag] = []
     bool_as_int: bool = False
     name_strip_prefixes: list[str] = []
+    modbus: ModbusServerSettings = Field(default_factory=ModbusServerSettings)
 
 
 class ServersConfig(BaseModel):
@@ -158,6 +169,33 @@ class SubTagActivation(BaseModel):
     active: bool = True
 
 
+class ModbusPointConfig(BaseModel):
+    """Where a subscription of a Modbus server reads its value."""
+    area: Literal["coil", "discrete", "input", "holding"] = "holding"
+    address: int = 0                 # protocol address, 0-based
+    data_type: Literal["bool", "int16", "uint16", "int32", "uint32", "float32",
+                       "int64", "uint64", "float64"] = "uint16"
+    order: Literal["", "ABCD", "CDAB", "BADC", "DCBA"] = ""    # "" = server default
+    bit: Optional[int] = None        # 0..15: one bit of a register (bool)
+    scale: float = 1.0
+    offset: float = 0.0
+    unit_id: Optional[int] = None    # None = server default
+
+    def node_id(self) -> str:
+        """Unique, readable key of the point (SubscriptionConfig.node_id)."""
+        from app.modbus.codec import AREA_SHORT, AREAS
+        key = f"{AREA_SHORT[self.area]}{self.address}"
+        if not AREAS[self.area][1]:
+            key += f".{self.bit}" if self.bit is not None else f":{self.data_type}"
+            if self.order and self.bit is None:
+                key += f":{self.order}"
+        if self.scale != 1 or self.offset != 0:
+            key += f"*{self.scale:g}" + (f"{self.offset:+g}" if self.offset else "")
+        if self.unit_id is not None:
+            key += f"@{self.unit_id}"
+        return key
+
+
 class SubscriptionConfig(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     server_id: str
@@ -169,6 +207,7 @@ class SubscriptionConfig(BaseModel):
     enabled: bool = True
     active_tags: list[SubTagActivation] = []
     source_folder_id: str = ""   # non-empty = managed by a DynamicFolderConfig
+    modbus: Optional[ModbusPointConfig] = None   # set for subscriptions of a Modbus server
 
 
 class SubscriptionsConfig(BaseModel):

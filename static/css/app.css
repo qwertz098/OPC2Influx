@@ -465,3 +465,7 @@ tr[id^="edit-"]:empty { display: none; }
 .alarm-values tr.alarm-row td { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
 .event-link { margin-left: 6px; font-size: 12px; white-space: nowrap; }
 .ref-trigger-box { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+/* Modbus register page */
+.mb-table td.num, .mb-table th.num { text-align: right; }
+.mb-table td { vertical-align: middle; }
+#mbEditor [hidden], #addServerForm [hidden] { display: none !important; }

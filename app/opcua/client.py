@@ -34,14 +34,19 @@ class OpcUaClientManager:
         # separately from any client that's actively polling the server.
         self._browse_clients: dict[str, Client] = {}
         self._browse_locks: dict[str, asyncio.Lock] = {}
+        # Modbus TCP servers are handled here too, so pollers, alarms, charts …
+        # read them through the same interface (see app/modbus/manager.py)
+        from app.modbus.manager import ModbusManager
+        self.modbus = ModbusManager(state)
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def start_all(self) -> None:
+        await self.modbus.reconcile()
         for srv in self._state.config.servers.servers:
-            if srv.enabled:
+            if srv.enabled and srv.protocol == "opcua":
                 self._conn_keys[srv.id] = self._conn_key(srv)
                 self._state.server_status[srv.id] = ServerStatus()
                 self._reconnect_tasks[srv.id] = asyncio.create_task(
@@ -49,6 +54,7 @@ class OpcUaClientManager:
                 )
 
     async def stop_all(self) -> None:
+        await self.modbus.stop_all()
         for task in self._reconnect_tasks.values():
             task.cancel()
         for client in self._clients.values():
@@ -74,7 +80,8 @@ class OpcUaClientManager:
 
     async def reconcile(self) -> None:
         """Called when server config changes. Adds new, removes deleted, restarts changed servers."""
-        configured = {s.id: s for s in self._state.config.servers.servers if s.enabled}
+        configured = {s.id: s for s in self._state.config.servers.servers
+                      if s.enabled and s.protocol == "opcua"}
         current_ids = set(self._reconnect_tasks.keys())
         changed = {
             sid for sid in current_ids & set(configured)
@@ -101,8 +108,9 @@ class OpcUaClientManager:
                     pass
             self._state.server_status.pop(sid, None)
 
+        await self.modbus.reconcile()
         for srv in self._state.config.servers.servers:
-            if srv.enabled and srv.id not in self._reconnect_tasks:
+            if srv.enabled and srv.protocol == "opcua" and srv.id not in self._reconnect_tasks:
                 self._conn_keys[srv.id] = self._conn_key(srv)
                 self._state.server_status[srv.id] = ServerStatus()
                 self._reconnect_tasks[srv.id] = asyncio.create_task(
@@ -220,7 +228,7 @@ class OpcUaClientManager:
                 return client
 
             srv = next((s for s in self._state.config.servers.servers if s.id == server_id), None)
-            if srv is None:
+            if srv is None or srv.protocol != "opcua":
                 return self._clients.get(server_id)
             try:
                 client = await self._make_client(srv)
@@ -242,6 +250,8 @@ class OpcUaClientManager:
 
     def is_connected(self, server_id: str) -> bool:
         if server_id not in self._clients:
+            if self.modbus.is_modbus(server_id):
+                return self.modbus.is_connected(server_id)
             return False
         status = self._state.server_status.get(server_id)
         return status is not None and status.connected
@@ -262,6 +272,8 @@ class OpcUaClientManager:
         return node
 
     async def read_node_value(self, server_id: str, node_id: str) -> Any:
+        if server_id not in self._clients and self.modbus.is_modbus(server_id):
+            return await self.modbus.read_node_value(server_id, node_id)
         client = self._require_client(server_id)
         node = self._get_cached_node(server_id, node_id, client)
         return await node.read_value()
@@ -276,6 +288,8 @@ class OpcUaClientManager:
         Returns one entry per node id, in order; nodes with a bad status
         code yield None instead of raising.
         """
+        if server_id not in self._clients and self.modbus.is_modbus(server_id):
+            return await self.modbus.read_node_values(server_id, node_ids)
         client = self._require_client(server_id)
         nodes = [self._get_cached_node(server_id, nid, client) for nid in node_ids]
         values: list[Any] = []
@@ -284,6 +298,8 @@ class OpcUaClientManager:
         return values
 
     async def read_node_attributes(self, server_id: str, node_id: str) -> dict[str, Any]:
+        if server_id not in self._clients and self.modbus.is_modbus(server_id):
+            return {}
         client = self._require_client(server_id)
         node = client.get_node(node_id)
         attrs = await node.read_attributes([

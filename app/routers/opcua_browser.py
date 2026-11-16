@@ -93,7 +93,7 @@ def _is_dyn_locked(state: RuntimeState, server_id: str, browse_path: str) -> boo
 
 @router.get("", response_class=HTMLResponse)
 async def browser_page(request: Request, state: RuntimeState = Depends(get_state)):
-    servers = state.config.servers.servers
+    servers = [s for s in state.config.servers.servers if s.protocol == "opcua"]   # Modbus: register page
     server_status = state.server_status
     # Set of server IDs that have at least one subscription
     servers_with_subs: set[str] = {

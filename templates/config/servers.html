@@ -3,7 +3,8 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>OPC UA Servers</h1>
+  <h1>Servers</h1>
+  <span class="text-sm text-muted">OPC UA and Modbus TCP sources</span>
 </div>
 
 {% if servers %}
@@ -15,8 +16,13 @@
       {{ 'Connected' if (status and status.connected) else 'Disconnected' }}
     </span>
     <strong>{{ srv.display_name }}</strong>
+    {% if srv.protocol == 'modbus' %}<span class="badge badge-mode">Modbus TCP</span>{% endif %}
     <span class="mono text-sm text-muted">{{ srv.endpoint_url }}</span>
     <span style="margin-left:auto" class="actions">
+      {% if srv.protocol == 'modbus' %}
+      {% set regs = register_counts.get(srv.id, (0, 0)) %}
+      <a class="btn btn-tool btn-xs" href="/config/servers/{{ srv.id }}/registers">Registers ({{ regs[0] }}/{{ regs[1] }})</a>
+      {% endif %}
       <button class="btn btn-ghost btn-xs"
         hx-get="/config/servers/{{ srv.id }}/test"
         hx-target="#test-{{ srv.id | slugify }}"
@@ -175,17 +181,29 @@
 <div class="card">
   <div class="card-header">Add Server</div>
   <div class="card-body">
-    <form action="/config/servers" method="post">
+    <form action="/config/servers" method="post" id="addServerForm">
       <div class="form-row">
+        <div class="form-group" style="flex:0 0 180px">
+          <label class="form-label">Protocol</label>
+          <select class="select" name="protocol" onchange="serverProtocolUi(this.form)">
+            <option value="opcua">OPC UA</option>
+            <option value="modbus">Modbus TCP</option>
+          </select>
+        </div>
         <div class="form-group">
           <label class="form-label">Display Name</label>
           <input class="input" type="text" name="display_name" placeholder="My PLC" required>
         </div>
-        <div class="form-group">
+        <div class="form-group opc-only">
           <label class="form-label">Endpoint URL</label>
           <input class="input" type="text" name="endpoint_url" placeholder="opc.tcp://192.168.1.10:4840" required>
         </div>
       </div>
+      <div class="mb-only" hidden>
+        {% with mb = None, url = '' %}{% include "partials/modbus_server_fields.html" %}{% endwith %}
+        <p class="form-hint" style="margin:0 0 8px">After adding, choose the registers to read on the server's register page.</p>
+      </div>
+      <div class="opc-only">
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Security Mode</label>
@@ -233,6 +251,7 @@
           <input class="input" type="password" name="password" autocomplete="current-password">
         </div>
       </div>
+      </div>
       <div class="form-group">
         <label class="form-label">Reconnect Interval (s)</label>
         <input class="input input-sm" type="number" name="reconnect_interval" value="10" min="1">
@@ -245,6 +264,13 @@
 </div>
 
 <script>
+// OPC UA or Modbus fields; hidden ones are disabled so they are neither checked nor sent
+function serverProtocolUi(form) {
+  const mb = form.querySelector('[name=protocol]').value === 'modbus';
+  form.querySelectorAll('.opc-only').forEach(el => { el.hidden = mb; el.querySelectorAll('input,select').forEach(i => i.disabled = mb); });
+  form.querySelectorAll('.mb-only').forEach(el => { el.hidden = !mb; el.querySelectorAll('input,select').forEach(i => i.disabled = !mb); });
+}
+serverProtocolUi(document.getElementById('addServerForm'));
 function toggleAuthFields(sel) {
   document.getElementById('auth-fields').style.display = sel.value === 'username' ? '' : 'none';
 }
