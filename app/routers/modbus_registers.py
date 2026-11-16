@@ -281,14 +281,55 @@ async def export_csv(server_id: str, state: RuntimeState = Depends(get_state)):
                     headers={"Content-Disposition": f'attachment; filename="{fname}_registers.csv"'})
 
 
-def parse_csv(text: str) -> list[dict]:
-    """Rows of a register CSV: comma or semicolon separated, header in the first line."""
-    text = text.lstrip("﻿")
-    first = text.splitlines()[0] if text.strip() else ""
-    delim = ";" if first.count(";") > first.count(",") else ","
-    rows = list(csv.DictReader(io.StringIO(text), delimiter=delim))
-    return [{(k or "").strip().lower(): (v or "").strip() for k, v in row.items()} for row in rows
-            if any((v or "").strip() for v in row.values())]
+def _plan_import(state: RuntimeState, srv: ServerConfig, text: str, modicon: bool) -> list[dict]:
+    """What importing the text would do, row by row: new / update / error."""
+    from app.modbus.table_import import normalize, parse_rows
+    regs = _registers(state, srv.id)
+    by_name = {r.display_name: r for r in regs}
+    taken = {r.node_id: r for r in regs}
+    seen_names, seen_nodes = set(), {}
+    plan = []
+    for n, raw in enumerate(parse_rows(text), start=1):
+        item = {"row": n, "status": "error", "fields": {"name": raw.get("name") or raw.get("description") or ""}}
+        try:
+            fields = normalize(raw, modicon=modicon)
+            item["fields"] = fields
+            node_id = _point(fields).node_id()
+            item["node_id"] = node_id
+            name = fields["name"]
+            if name in seen_names:
+                raise ValueError(f"name {name} appears twice")
+            if node_id in seen_nodes:
+                raise ValueError(f"{node_id} appears twice (also {seen_nodes[node_id]})")
+            other = taken.get(node_id)
+            existing = by_name.get(name)
+            if other is not None and other is not existing:
+                raise ValueError(f"{node_id} is already configured as “{other.display_name}”")
+            seen_names.add(name)
+            seen_nodes[node_id] = name
+            item["status"] = "update" if existing else "new"
+            item["id"] = existing.id if existing else ""
+        except (ValueError, TypeError) as exc:
+            item["error"] = str(exc)
+        plan.append(item)
+    return plan
+
+
+async def _run_import(state: RuntimeState, srv: ServerConfig, text: str, modicon: bool) -> dict:
+    plan = _plan_import(state, srv, text, modicon)
+    added = updated = 0
+    errors = [f"row {p['row']}: {p['error']}" for p in plan if p["status"] == "error"]
+    for p in plan:
+        if p["status"] == "error":
+            continue
+        try:
+            _upsert(state, srv, p["fields"], p["id"])
+            added += p["status"] == "new"
+            updated += p["status"] == "update"
+        except (ValueError, TypeError) as exc:
+            errors.append(f"row {p['row']}: {exc}")
+    await _apply(state)
+    return {"added": added, "updated": updated, "errors": errors[:20]}
 
 
 @router.post("/import")
@@ -302,20 +343,33 @@ async def import_csv(server_id: str, file: UploadFile, state: RuntimeState = Dep
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("cp1252")
-    rows = parse_csv(text)
-    if not rows or "name" not in rows[0] or "address" not in rows[0]:
-        return JSONResponse({"error": "The CSV needs at least the columns name and address"}, status_code=400)
-    added = updated = 0
-    errors = []
-    for n, row in enumerate(rows, start=2):
-        existing = next((r for r in _registers(state, server_id) if r.display_name == row.get("name")), None)
-        try:
-            _upsert(state, srv, row, existing.id if existing else "")
-            if existing:
-                updated += 1
-            else:
-                added += 1
-        except (ValueError, TypeError) as exc:
-            errors.append(f"line {n}: {exc}")
-    await _apply(state)
-    return {"added": added, "updated": updated, "errors": errors[:20]}
+    first = text.lstrip("\ufeff").split("\n", 1)[0].lower()
+    if "address" not in first and "adresse" not in first and "register" not in first:
+        return JSONResponse({"error": "The CSV needs a header line with at least a name and an address column"},
+                            status_code=400)
+    # our own export has 0-based addresses: no Modicon numbers there
+    return await _run_import(state, srv, text, modicon="interval_ms" not in first)
+
+
+@router.post("/paste/preview")
+async def paste_preview(server_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    srv = _server(state, server_id)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    data = await request.json()
+    return {"rows": _plan_import(state, srv, data.get("text") or "", bool(data.get("modicon", True)))}
+
+
+@router.post("/paste")
+async def paste_import(server_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    srv = _server(state, server_id)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    data = await request.json()
+    return await _run_import(state, srv, data.get("text") or "", bool(data.get("modicon", True)))
+
+
+@router.get("/ai-prompt")
+async def ai_prompt():
+    from app.modbus.table_import import PROMPT
+    return Response(PROMPT, media_type="text/plain; charset=utf-8")

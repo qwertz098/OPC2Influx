@@ -21,6 +21,7 @@
       <button type="button" class="btn btn-tool btn-xs" onclick="mbAll(false)" title="Read none of the (shown) registers">Alle ab</button>
       <a class="btn btn-ghost btn-xs" href="/config/servers/{{ srv.id }}/registers/export.csv">Export CSV</a>
       <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbImport').click()">Import CSV</button>
+      <button type="button" class="btn btn-tool btn-xs" onclick="mbPasteOpen()" title="Paste a register table, e.g. from an AI or a spreadsheet">Paste list</button>
       <input type="file" id="mbImport" accept=".csv,text/csv" hidden onchange="mbImportCsv(this)">
       <button type="button" class="btn btn-primary btn-xs" onclick="mbEdit(null)">+ Register</button>
     </span>
@@ -60,6 +61,32 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3" id="mbPaste" hidden>
+  <div class="card-header" style="display:flex;align-items:center;gap:8px">
+    <span>Paste register list</span>
+    <button type="button" class="btn btn-tool btn-xs" style="margin-left:auto" onclick="mbCopyPrompt(this)"
+            title="Copies an instruction for ChatGPT, Claude … : paste it together with the device's Modbus documentation">Copy AI prompt</button>
+  </div>
+  <div class="card-body">
+    <p class="text-sm text-muted" style="margin:0 0 8px"><strong>Copy AI prompt</strong>, paste it together with the
+      device's Modbus documentation into an AI (ChatGPT, Claude, …) and paste its answer here. Format: a table with the
+      columns <code>name | area | address | type | order | bit | scale | offset | unit_id</code> (the prompt explains them).
+      The preview shows what will be added or updated before you import.</p>
+    <textarea class="input mono" id="mbPasteText" rows="10" style="width:100%;max-width:none;font-size:12px"
+              placeholder="| name | area | address | type | scale |&#10;|---|---|---|---|---|&#10;| Boiler.Temperature | holding | 40001 | INT | 0.1 |"
+              oninput="mbPastePreviewSoon()"></textarea>
+    <label class="checkbox-label" style="margin:6px 0" title="Off: all addresses are 0-based protocol addresses as written">
+      <input type="checkbox" id="mbModicon" checked onchange="mbPastePreview()">
+      5/6-digit addresses such as 40001, 30001, 10001, 00001 are Modicon numbers (area + address + 1)</label>
+    <div id="mbPasteResult"></div>
+    <div class="form-actions form-actions--edit">
+      <span id="mbPasteMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" id="mbPasteBtn" onclick="mbPasteImport()" disabled>Import</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbPaste').hidden = true">Cancel</button>
     </div>
   </div>
 </div>
@@ -309,6 +336,54 @@ async function mbSave() {
   const r = await fetch(MB_URL, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(f)});
   const d = await r.json();
   if (!r.ok) { mbEditorMsg(d.error || 'Saving failed', true); return; }
+  location.reload();
+}
+// Paste a register list
+let mbPasteTimer = null, mbPasteRows = [];
+function mbPasteOpen() {
+  const c = $('mbPaste'); c.hidden = false; $('mbEditor').hidden = true;
+  c.scrollIntoView({behavior: 'smooth', block: 'start'}); $('mbPasteText').focus();
+}
+async function mbCopyPrompt(btn) {
+  const text = await (await fetch(`${MB_URL}/ai-prompt`)).text();
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Prompt copied ✓'; }
+  catch { $('mbPasteText').value = text; btn.textContent = 'Prompt in the text box (copy it)'; }
+  setTimeout(() => btn.textContent = 'Copy AI prompt', 2500);
+}
+function mbPastePreviewSoon() { clearTimeout(mbPasteTimer); mbPasteTimer = setTimeout(mbPastePreview, 300); }
+async function mbPastePreview() {
+  const text = $('mbPasteText').value;
+  if (!text.trim()) { $('mbPasteResult').innerHTML = ''; $('mbPasteBtn').disabled = true; $('mbPasteMsg').textContent = ''; return; }
+  const r = await fetch(`${MB_URL}/paste/preview`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text, modicon: $('mbModicon').checked})});
+  const d = await r.json();
+  mbPasteRows = d.rows || [];
+  const ok = mbPasteRows.filter(x => x.status !== 'error');
+  if (!mbPasteRows.length) {
+    $('mbPasteResult').innerHTML = '<p class="text-sm" style="color:var(--bad)">No table found: the first line must name the columns (at least name / address).</p>';
+  } else {
+    const typ = f => f ? (f.bit !== undefined ? 'bit ' + f.bit : f.type) + (f.order ? ' ' + f.order : '') : '';
+    const sc = f => f && (f.scale !== undefined || f.offset !== undefined) ? '×' + (f.scale ?? 1) + (f.offset ? ' ' + (f.offset > 0 ? '+' : '') + f.offset : '') : '';
+    $('mbPasteResult').innerHTML = `<div style="max-height:320px;overflow:auto"><table class="table fit-table mb-table">
+      <thead><tr><th>#</th><th></th><th>Name</th><th>Register</th><th>Type</th><th class="num">Scale</th><th>Note</th></tr></thead><tbody>` +
+      mbPasteRows.map(x => `<tr ${x.status === 'error' ? 'style="color:var(--bad)"' : ''}><td class="text-xs text-muted">${x.row}</td>
+        <td><span class="badge ${x.status === 'new' ? 'badge-ok' : x.status === 'update' ? 'badge-mode' : 'badge-error'}">${x.status}</span></td>
+        <td>${esc(x.fields ? x.fields.name : '')}</td><td class="mono text-sm">${esc(x.node_id || '')}</td>
+        <td class="mono text-sm">${esc(typ(x.fields))}</td><td class="num mono text-sm">${esc(sc(x.fields))}</td>
+        <td class="text-xs">${esc(x.error || '')}</td></tr>`).join('') + '</tbody></table></div>';
+  }
+  const nNew = ok.filter(x => x.status === 'new').length, nUpd = ok.length - nNew, nErr = mbPasteRows.length - ok.length;
+  $('mbPasteMsg').textContent = mbPasteRows.length ? `${nNew} new, ${nUpd} update${nErr ? `, ${nErr} with errors (skipped)` : ''}` : '';
+  $('mbPasteBtn').disabled = !ok.length;
+  $('mbPasteBtn').textContent = ok.length ? `Import ${ok.length}` : 'Import';
+}
+async function mbPasteImport() {
+  const r = await fetch(`${MB_URL}/paste`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: $('mbPasteText').value, modicon: $('mbModicon').checked})});
+  const d = await r.json();
+  if (!r.ok) { $('mbPasteMsg').textContent = d.error || 'Import failed'; return; }
+  try { sessionStorage.setItem('mb_import', `Imported: ${d.added} added, ${d.updated} updated` +
+        (d.errors.length ? ` · ${d.errors.length} skipped: ${d.errors.join('; ')}` : '')); } catch {}
   location.reload();
 }
 async function mbImportCsv(input) {
