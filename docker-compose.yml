@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8000}:8000"
+      - "${MODBUS_PORT:-5020}:5020"      # Modbus TCP server (Outputs page)
     volumes:
       - config_data:/config
       - data_volume:/data

@@ -109,3 +109,22 @@ class ModbusTcpClient:
         if len(data) < 2 * count:
             raise ConnectionError("short answer")
         return list(struct.unpack(f">{count}H", data[:2 * count]))
+
+    async def write_coils(self, unit: int, address: int, values: list[bool]) -> None:
+        """Function 5 for one coil, 15 for several."""
+        if len(values) == 1:
+            await self._request(unit, struct.pack(">BHH", 5, address, 0xFF00 if values[0] else 0))
+            return
+        data = bytearray((len(values) + 7) // 8)
+        for i, v in enumerate(values):
+            if v:
+                data[i // 8] |= 1 << (i % 8)
+        await self._request(unit, struct.pack(">BHHB", 15, address, len(values), len(data)) + bytes(data))
+
+    async def write_registers(self, unit: int, address: int, words: list[int]) -> None:
+        """Function 6 for one register, 16 for several."""
+        if len(words) == 1:
+            await self._request(unit, struct.pack(">BHH", 6, address, words[0] & 0xFFFF))
+            return
+        await self._request(unit, struct.pack(f">BHHB{len(words)}H", 16, address, len(words), 2 * len(words),
+                                              *[w & 0xFFFF for w in words]))

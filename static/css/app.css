@@ -486,3 +486,9 @@ tr[id^="edit-"]:empty { display: none; }
 .mb-type { border: 1px solid var(--border); border-radius: 5px; background: var(--surface, #fff); padding: 1px 6px; font-size: 12px; cursor: pointer; color: inherit; }
 .mb-type b { font-weight: 600; }
 .mb-type.cur { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* Outputs: signal picker */
+.pick-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+             display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 12px; }
+.pick-item { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 0; cursor: pointer; min-width: 0; }
+.pick-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ptEditor [hidden], #pick [hidden] { display: none !important; }

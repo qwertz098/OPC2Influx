@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from typing import Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +23,27 @@ class RegisterBank:
         self.input: dict[int, int] = {}
         self.holding: dict[int, int] = {}
         self.valid: Optional[set[tuple[str, int]]] = None   # None: every address exists
+        # Writes: check(area, start, count) → None to allow, else a Modbus exception code;
+        # on_write(area, start, values) after a write was stored
+        self.write_check: Optional[Callable[[str, int, int], Optional[int]]] = None
+        self.on_write: Optional[Callable[[str, int, list], None]] = None
 
     def exists(self, area: str, start: int, count: int) -> bool:
         if start < 0 or start + count > 65536:
             return False
         return self.valid is None or all((area, a) in self.valid for a in range(start, start + count))
+
+    def writable(self, area: str, start: int, count: int) -> Optional[int]:
+        if not self.exists(area, start, count):
+            return 2
+        return self.write_check(area, start, count) if self.write_check else None
+
+    def written(self, area: str, start: int, values: list) -> None:
+        if self.on_write:
+            try:
+                self.on_write(area, start, values)
+            except Exception as exc:
+                logger.warning("Modbus write handler failed: %s", exc)
 
     def set_words(self, area: str, address: int, words: list[int]) -> None:
         bank = getattr(self, area)
@@ -43,6 +59,11 @@ class ModbusTcpServer:
         self._server: Optional[asyncio.base_events.Server] = None
         self.requests = 0
         self._writers: set[asyncio.StreamWriter] = set()
+        self.writes = 0
+
+    @property
+    def clients(self) -> int:
+        return len(self._writers)
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(self._client, self.host, self.port)
@@ -99,30 +120,28 @@ class ModbusTcpServer:
                     return bytes([fc, len(out)]) + bytes(out)
                 words = [data.get(start + i, 0) for i in range(count)]
                 return bytes([fc, 2 * count]) + struct.pack(f">{count}H", *words)
-            if fc == 5:
-                addr, val = struct.unpack(">HH", pdu[1:5])
-                if not bank.exists("coil", addr, 1):
-                    return err(2)
-                bank.coil[addr] = val == 0xFF00
-                return pdu[:5]
-            if fc == 6:
-                addr, val = struct.unpack(">HH", pdu[1:5])
-                if not bank.exists("holding", addr, 1):
-                    return err(2)
-                bank.holding[addr] = val
-                return pdu[:5]
-            if fc == 15:
-                start, count, n = struct.unpack(">HHB", pdu[1:6])
-                if not bank.exists("coil", start, count):
-                    return err(2)
-                for i in range(count):
-                    bank.coil[start + i] = bool(pdu[6 + i // 8] >> (i % 8) & 1)
-                return pdu[:5]
-            if fc == 16:
-                start, count, n = struct.unpack(">HHB", pdu[1:6])
-                if not bank.exists("holding", start, count):
-                    return err(2)
-                bank.set_words("holding", start, list(struct.unpack(f">{count}H", pdu[6:6 + 2 * count])))
+            if fc in (5, 6, 15, 16):
+                area = "coil" if fc in (5, 15) else "holding"
+                if fc in (5, 6):
+                    start, raw = struct.unpack(">HH", pdu[1:5])
+                    if fc == 5 and raw not in (0, 0xFF00):
+                        return err(3)
+                    values = [raw == 0xFF00] if fc == 5 else [raw]
+                else:
+                    start, count, n = struct.unpack(">HHB", pdu[1:6])
+                    if count < 1 or count > (1968 if fc == 15 else 123):
+                        return err(3)
+                    if fc == 15:
+                        values = [bool(pdu[6 + i // 8] >> (i % 8) & 1) for i in range(count)]
+                    else:
+                        values = list(struct.unpack(f">{count}H", pdu[6:6 + 2 * count]))
+                code = bank.writable(area, start, len(values))
+                if code:
+                    return err(code)
+                for i, v in enumerate(values):
+                    getattr(bank, area)[start + i] = v
+                self.writes += 1
+                bank.written(area, start, values)
                 return pdu[:5]
             return err(1)
         except (struct.error, IndexError):

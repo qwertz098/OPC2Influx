@@ -34,7 +34,7 @@ from app.routers import (
     server_config, influxdb_config, alerts_config,
 )
 from app.routers import sqlite_config, config_backup, tags_config, alarm_rules, data_viewer, reports, references
-from app.routers import chart, help_page, dynamic_folders, app_settings, stale_watchdog, alarm_history, modbus_registers
+from app.routers import chart, help_page, dynamic_folders, app_settings, stale_watchdog, alarm_history, modbus_registers, outputs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -156,7 +156,11 @@ async def lifespan(app: FastAPI):
     await state.polling_engine.reconcile()
 
     state.watchdog_task = asyncio.create_task(state.watchdog.run(), name="watchdog")
-    asyncio.create_task(AlarmRuleChecker().run(state), name="alarm-checker")
+    state.alarm_checker = AlarmRuleChecker()
+    asyncio.create_task(state.alarm_checker.run(state), name="alarm-checker")
+    from app.outputs.modbus_out import ModbusOutputService
+    state.modbus_output = ModbusOutputService(state)
+    _modbus_out_task = asyncio.create_task(state.modbus_output.run(), name="modbus-output")
     asyncio.create_task(StaleValueChecker().run(state), name="stale-watchdog")
     from app.reports.scheduler import ReportScheduler
     asyncio.create_task(ReportScheduler().run(state), name="report-scheduler")
@@ -170,6 +174,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    _modbus_out_task.cancel()
+    await asyncio.gather(_modbus_out_task, return_exceptions=True)
     if state.watchdog_task:
         state.watchdog_task.cancel()
     if state.folder_scanner_task:
@@ -208,6 +214,7 @@ app.include_router(reports.router)
 app.include_router(references.router)
 app.include_router(alarm_history.router)
 app.include_router(modbus_registers.router)
+app.include_router(outputs.router)
 app.include_router(sqlite_config.router)
 app.include_router(config_backup.router)
 app.include_router(tags_config.router)
@@ -226,6 +233,6 @@ _make_jinja_env(_templates)
 for router_mod in [dashboard, opcua_browser, subscriptions, chart, help_page,
                    server_config, influxdb_config, alerts_config,
                    sqlite_config, config_backup, tags_config, alarm_rules, data_viewer,
-                   app_settings, stale_watchdog, references, alarm_history, modbus_registers]:
+                   app_settings, stale_watchdog, references, alarm_history, modbus_registers, outputs]:
     if hasattr(router_mod, "templates"):
         _make_jinja_env(router_mod.templates)

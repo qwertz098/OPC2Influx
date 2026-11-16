@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Outputs</h1>
+  <span class="text-sm text-muted">Values the app publishes</span>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;gap:10px">
+    <span>Modbus TCP server</span>
+    <span id="srvBadge" class="badge"></span>
+    <span id="srvInfo" class="text-sm text-muted"></span>
+  </div>
+  <div class="card-body">
+    <div class="form-row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px">
+        <label class="checkbox-label"><input type="checkbox" id="ms_enabled" {% if ms.enabled %}checked{% endif %}> <strong>Server on</strong></label>
+      </div>
+      <div class="form-group" style="flex:0 0 100px">
+        <label class="form-label">Port</label>
+        <input class="input" id="ms_port" type="number" min="1" max="65535" value="{{ ms.port }}">
+      </div>
+      <div class="form-group" style="flex:0 0 220px">
+        <label class="form-label" title="Order of 32/64-bit values; a register can override it">Byte / word order</label>
+        <select class="select" id="ms_order">
+          {% for o, t in [('ABCD','ABCD · big-endian'),('CDAB','CDAB · word swap'),('BADC','BADC · byte swap'),('DCBA','DCBA · little-endian')] %}
+          <option value="{{ o }}" {% if ms.order == o %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex:0 0 120px">
+        <label class="form-label">Update</label>
+        <select class="select" id="ms_update">
+          {% for v, t in [(200,'200 ms'),(500,'500 ms'),(1000,'1 s'),(2000,'2 s'),(5000,'5 s')] %}
+          <option value="{{ v }}" {% if ms.update_ms == v %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px">
+        <label class="checkbox-label" title="Clients may write the registers of kind “write” (holding registers / coils). All other writes are refused.">
+          <input type="checkbox" id="ms_writable" {% if ms.writable %}checked{% endif %}> Writable</label>
+      </div>
+      <div style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px;display:flex;align-items:center">
+        <button type="button" class="btn btn-primary btn-xs" style="width:auto" onclick="srvSave()">Save</button>
+        <span id="srvMsg" class="text-sm" style="margin-left:6px"></span>
+      </div>
+    </div>
+    <p class="text-xs text-muted" style="margin:8px 0 0">Any unit id is answered. Values are read-only for clients; with
+      <em>Writable</em>, clients can write the registers of kind <em>write</em>, e.g. setpoints or acknowledgements from a
+      PLC or SCADA, and those values can be recorded to InfluxDB. Addresses not in the map read 0.</p>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span>Register map</span>
+    <input class="input input-sm" id="ptFilter" placeholder="Filter…" style="max-width:200px" oninput="ptFilter()">
+    <span class="text-sm text-muted" id="ptCount"></span>
+    <span class="actions" style="margin-left:auto">
+      <button type="button" class="btn btn-tool btn-xs" onclick="ptAll(true)">Alle an</button>
+      <button type="button" class="btn btn-tool btn-xs" onclick="ptAll(false)">Alle ab</button>
+      <a class="btn btn-ghost btn-xs" href="/outputs/export.csv" title="Register map for the PLC / SCADA side">Export CSV</a>
+      <button type="button" class="btn btn-tool btn-xs" onclick="pickOpen()">+ Signals</button>
+      <button type="button" class="btn btn-tool btn-xs" onclick="addAlarms()" title="Every alarm rule as a coil: 1 while the alarm is active">+ Alarms</button>
+      <button type="button" class="btn btn-tool btn-xs" onclick="ptEdit(null, 'received')" title="A register clients write into">+ Write register</button>
+    </span>
+  </div>
+  <div class="card-body" style="padding:0">
+    <div id="ptMsg" class="text-sm" style="padding:6px 16px" hidden></div>
+    <div style="overflow-x:auto">
+    <table class="table fit-table mb-table">
+      <thead><tr><th>On</th><th>Kind</th><th>Name</th><th>Register</th><th>Modicon</th><th>Type</th>
+        <th class="num">Scale</th><th title="Discrete input: 1 while the value is valid">Status bit</th><th class="num">Value</th><th></th></tr></thead>
+      <tbody id="ptRows"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- Pick signals -->
+<div class="card mb-3" id="pick" hidden>
+  <div class="card-header" style="display:flex;align-items:center;gap:8px">
+    <span>Add signals</span>
+    <input class="input input-sm" id="pickFilter" placeholder="Filter…" style="max-width:240px" oninput="pickRender()">
+    <label class="checkbox-label text-sm"><input type="checkbox" id="pickAll" onchange="pickAllShown(this.checked)"> all shown</label>
+    <span class="text-sm text-muted" id="pickCount" style="margin-left:auto"></span>
+  </div>
+  <div class="card-body">
+    <div id="pickList" class="pick-list"></div>
+    <div class="form-row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+      <div class="form-group" style="flex:0 0 170px">
+        <label class="form-label">Numbers as</label>
+        <select class="select" id="pickArea"><option value="holding">Holding registers</option><option value="input">Input registers</option></select>
+      </div>
+      <div class="form-group" style="flex:0 0 120px">
+        <label class="form-label">Type</label>
+        <select class="select" id="pickType">{% for t in types if t != 'bool' %}<option value="{{ t }}" {% if t == 'float32' %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group" style="flex:0 0 170px">
+        <label class="form-label">On/off values as</label>
+        <select class="select" id="pickBool"><option value="coil">Coils</option><option value="discrete">Discrete inputs</option></select>
+      </div>
+      <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px">
+        <label class="checkbox-label" title="Each value gets a discrete input that is 1 while the value is valid (subscription on, server connected, value read)">
+          <input type="checkbox" id="pickStatus" checked> Status bit per value</label>
+      </div>
+    </div>
+    <div class="form-actions form-actions--edit">
+      <span class="text-xs text-muted" style="margin-right:auto">Placed at the next free addresses; change single ones with Edit.</span>
+      <button type="button" class="btn btn-primary btn-xs" id="pickBtn" onclick="pickAdd()" disabled>Add</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('pick').hidden = true">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit one entry -->
+<div class="card mb-3" id="ptEditor" hidden>
+  <div class="card-header" id="ptEditorTitle">Register</div>
+  <div class="card-body">
+    <div class="form-row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group k-value" style="flex:2;min-width:220px">
+        <label class="form-label">Signal</label>
+        <select class="select" id="e_sub">{% for s in subs %}<option value="{{ s.id }}">{{ s.label }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group k-alarm" style="flex:2;min-width:220px">
+        <label class="form-label">Alarm rule</label>
+        <select class="select" id="e_rule">{% for r in rules %}<option value="{{ r.id }}">{{ r.label }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group" style="flex:2;min-width:200px">
+        <label class="form-label k-received-label">Name</label>
+        <input class="input" id="e_name" placeholder="optional label">
+      </div>
+      <div class="form-group" style="flex:0 0 170px">
+        <label class="form-label">Area</label>
+        <select class="select" id="e_area" onchange="ptEditorUi()">
+          <option value="holding">Holding register</option><option value="input">Input register</option>
+          <option value="coil">Coil</option><option value="discrete">Discrete input</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:0 0 110px">
+        <label class="form-label" title="0-based protocol address">Address</label>
+        <input class="input" id="e_address" type="number" min="0" max="65535">
+      </div>
+      <div class="form-group e-reg" style="flex:0 0 120px">
+        <label class="form-label">Type</label>
+        <select class="select" id="e_type">{% for t in types if t != 'bool' %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group e-reg" style="flex:0 0 150px">
+        <label class="form-label">Order</label>
+        <select class="select" id="e_order"><option value="">Server ({{ ms.order }})</option>
+          {% for o in ['ABCD','CDAB','BADC','DCBA'] %}<option value="{{ o }}">{{ o }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group e-reg" style="flex:0 0 100px">
+        <label class="form-label" title="register = value × scale, e.g. 10 for one decimal in an integer register; written values are divided by it">Scale</label>
+        <input class="input" id="e_scale" inputmode="decimal">
+      </div>
+      <div class="form-group k-value" style="flex:0 0 130px">
+        <label class="form-label" title="Discrete input that is 1 while the value is valid; empty = none">Status bit (DI)</label>
+        <input class="input" id="e_status" type="number" min="0" max="65535" placeholder="none">
+      </div>
+      <div class="form-group k-received" style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px">
+        <label class="checkbox-label" title="Every written value is written to InfluxDB, measurement = name">
+          <input type="checkbox" id="e_record"> Record to InfluxDB</label>
+      </div>
+    </div>
+    <div class="form-actions form-actions--edit">
+      <span id="ptEditorMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" onclick="ptSave()">Save</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('ptEditor').hidden = true">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PTS = {{ points | tojson }};
+const SUBS = {{ subs | tojson }};
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const AREA_SHORT = {holding: 'hr', input: 'ir', coil: 'co', discrete: 'di'};
+const KIND = {value: ['value', 'badge-mode', 'Read-only: the signal’s latest value'], alarm: ['alarm', 'badge-error', '1 while the alarm is active'],
+              received: ['write', 'badge-ok', 'Clients write this register']};
+let editId = null, editKind = 'value';
+
+function post(url, body) {
+  return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+}
+function msg(text, bad) { const m = $('ptMsg'); m.hidden = !text; m.textContent = text || ''; m.style.color = bad ? 'var(--bad)' : ''; }
+
+// --- server ---
+function srvShow(s) {
+  const b = $('srvBadge');
+  b.textContent = s.running ? 'Running' : (s.error ? 'Error' : 'Off');
+  b.className = 'badge ' + (s.running ? 'badge-ok' : s.error ? 'badge-error' : 'badge-mode');
+  $('srvInfo').textContent = s.running ? `port ${s.port} · ${s.clients} client${s.clients === 1 ? '' : 's'} · ${s.requests} requests · ${s.writes} writes`
+                                       : (s.error || '');
+}
+async function srvSave() {
+  const r = await post('/outputs/server', {enabled: $('ms_enabled').checked, port: parseInt($('ms_port').value) || 5020,
+    order: $('ms_order').value, update_ms: parseInt($('ms_update').value), writable: $('ms_writable').checked});
+  const d = await r.json();
+  $('srvMsg').textContent = r.ok ? 'Saved' : (d.error || 'Failed'); $('srvMsg').style.color = r.ok ? '' : 'var(--bad)';
+  if (r.ok) srvShow(d);
+  setTimeout(() => $('srvMsg').textContent = '', 2000);
+}
+
+// --- register map ---
+function typeText(p) { return ['coil', 'discrete'].includes(p.area) ? 'bool' : p.data_type + (p.order ? ' ' + p.order : ''); }
+function render() {
+  const rows = [...PTS].sort((a, b) => ['coil', 'discrete', 'input', 'holding'].indexOf(a.area) - ['coil', 'discrete', 'input', 'holding'].indexOf(b.area) || a.address - b.address);
+  $('ptRows').innerHTML = rows.length ? rows.map(p => {
+    const k = KIND[p.kind];
+    const reg = AREA_SHORT[p.area] + p.address + (p.count > 1 ? '–' + (p.address + p.count - 1) : '');
+    return `<tr data-id="${p.id}" data-text="${esc((p.label + ' ' + reg + ' ' + p.modicon + ' ' + k[0] + ' ' + typeText(p)).toLowerCase())}"
+        class="${p.enabled ? '' : 'opacity-50'}" ${p.problem ? 'style="color:var(--bad)"' : ''}>
+      <td><input type="checkbox" class="pt-on" ${p.enabled ? 'checked' : ''} onchange="ptToggle(this)"></td>
+      <td><span class="badge ${k[1]}" title="${k[2]}">${k[0]}</span>${p.kind === 'received' && p.record ? ' <span class="text-xs text-muted" title="Recorded to InfluxDB">●rec</span>' : ''}</td>
+      <td class="ellipsis" style="max-width:280px" title="${esc(p.label)}${p.problem ? '\n' + esc(p.problem) : ''}">${esc(p.label)}${p.problem ? ' ⚠' : ''}</td>
+      <td class="mono text-sm">${reg}</td><td class="mono text-sm text-muted">${p.modicon}</td>
+      <td class="mono text-sm">${esc(typeText(p))}</td>
+      <td class="num mono text-sm">${['coil', 'discrete'].includes(p.area) || p.scale === 1 ? '<span class="text-muted">—</span>' : '×' + p.scale}</td>
+      <td class="mono text-sm">${p.status_address !== null && p.kind === 'value' ? 'di' + p.status_address + ' <span class="pt-valid"></span>' : '<span class="text-muted">—</span>'}</td>
+      <td class="num mono text-sm pt-val"><span class="text-muted">—</span></td>
+      <td><div class="actions"><button type="button" class="btn btn-ghost btn-xs" onclick="ptEdit('${p.id}')">Edit</button>
+        <button type="button" class="btn btn-danger btn-xs" onclick="ptDelete('${p.id}')">Delete</button></div></td></tr>`;
+  }).join('') : '<tr><td colspan="10" class="text-muted text-sm" style="text-align:center;padding:16px">Empty: add signals, alarms or write registers.</td></tr>';
+  ptFilter();
+}
+function visible() { return [...document.querySelectorAll('#ptRows tr[data-id]')].filter(tr => !tr.hidden); }
+function ptFilter() {
+  const q = $('ptFilter').value.trim().toLowerCase();
+  document.querySelectorAll('#ptRows tr[data-id]').forEach(tr => tr.hidden = q && !tr.dataset.text.includes(q));
+  const on = PTS.filter(p => p.enabled).length, vis = visible().length;
+  $('ptCount').textContent = PTS.length ? `${on} of ${PTS.length} on` + (vis < PTS.length ? ` · ${vis} shown` : '') : '';
+}
+async function ptToggle(cb) {
+  const id = cb.closest('tr').dataset.id;
+  const r = await post(`/outputs/points/${id}/toggle`, {enabled: cb.checked});
+  if (!r.ok) { cb.checked = !cb.checked; return; }
+  PTS.find(p => p.id === id).enabled = cb.checked;
+  cb.closest('tr').classList.toggle('opacity-50', !cb.checked);
+  ptFilter();
+}
+async function ptAll(on) {
+  const vis = visible(), filtered = vis.length < PTS.length;
+  if (!vis.length || !confirm(`${on ? 'Publish' : 'Stop publishing'} ${filtered ? 'the ' + vis.length + ' shown' : 'all ' + PTS.length} entries?`)) return;
+  const ids = vis.map(tr => tr.dataset.id);
+  const r = await post('/outputs/points/all', {enabled: on, ids: filtered ? ids : []});
+  if (!r.ok) return;
+  ids.forEach(id => PTS.find(p => p.id === id).enabled = on);
+  render();
+}
+async function ptDelete(id) {
+  const p = PTS.find(x => x.id === id);
+  if (!confirm(`Delete ${p.label} from the register map?`)) return;
+  await post(`/outputs/points/${id}/delete`);
+  PTS.splice(PTS.indexOf(p), 1); render();
+}
+async function addAlarms() {
+  const r = await post('/outputs/points/add-alarms', {area: 'coil'});
+  const d = await r.json();
+  if (!d.added) { msg('All alarm rules are in the map already (or there are none).'); return; }
+  try { sessionStorage.setItem('outputs_msg', `${d.added} alarm${d.added === 1 ? '' : 's'} added as coils`); } catch {}
+  location.reload();
+}
+
+// --- editor ---
+function ptEditorUi() {
+  const bit = ['coil', 'discrete'].includes($('e_area').value);
+  document.querySelectorAll('#ptEditor .e-reg').forEach(el => el.hidden = bit);
+  document.querySelectorAll('#ptEditor .k-value').forEach(el => el.hidden = editKind !== 'value');
+  document.querySelectorAll('#ptEditor .k-alarm').forEach(el => el.hidden = editKind !== 'alarm');
+  document.querySelectorAll('#ptEditor .k-received').forEach(el => el.hidden = editKind !== 'received');
+  $('e_name').placeholder = editKind === 'received' ? 'Setpoint.Pump' : 'optional label';
+  document.querySelector('#ptEditor .k-received-label').textContent = editKind === 'received' ? 'Name / measurement' : 'Label';
+  [...$('e_area').options].forEach(o => o.disabled = (editKind === 'alarm' && !['coil', 'discrete'].includes(o.value)) ||
+                                                    (editKind === 'received' && !['holding', 'coil'].includes(o.value)));
+}
+function ptEdit(id, kind) {
+  const p = PTS.find(x => x.id === id);
+  editId = p ? p.id : null;
+  editKind = p ? p.kind : kind;
+  $('ptEditorTitle').textContent = p ? 'Edit ' + p.label : 'New write register';
+  if (p && p.kind === 'value') $('e_sub').value = p.source_id;
+  if (p && p.kind === 'alarm') $('e_rule').value = p.source_id;
+  $('e_name').value = p ? p.name : '';
+  $('e_area').value = p ? p.area : 'holding';
+  $('e_address').value = p ? p.address : '';
+  $('e_type').value = p && p.data_type !== 'bool' ? p.data_type : (editKind === 'received' ? 'int16' : 'float32');
+  $('e_order').value = p ? p.order : '';
+  $('e_scale').value = p ? p.scale : 1;
+  $('e_status').value = p && p.status_address !== null ? p.status_address : '';
+  $('e_record').checked = p ? p.record : true;
+  $('ptEditorMsg').textContent = '';
+  ptEditorUi();
+  const ed = $('ptEditor'); ed.hidden = false; $('pick').hidden = true;
+  ed.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+async function ptSave() {
+  const bit = ['coil', 'discrete'].includes($('e_area').value);
+  const body = {id: editId, kind: editKind, name: $('e_name').value.trim(), area: $('e_area').value,
+    address: $('e_address').value, data_type: bit ? 'bool' : $('e_type').value, order: bit ? '' : $('e_order').value,
+    scale: bit ? 1 : $('e_scale').value || 1, status_address: editKind === 'value' ? $('e_status').value : '',
+    record: $('e_record').checked};
+  if (editKind === 'value') body.source_id = $('e_sub').value;
+  if (editKind === 'alarm') body.source_id = $('e_rule').value;
+  if (body.address === '') { $('ptEditorMsg').textContent = 'Enter an address'; $('ptEditorMsg').style.color = 'var(--bad)'; return; }
+  const r = await post('/outputs/points', body);
+  const d = await r.json();
+  if (!r.ok) { $('ptEditorMsg').textContent = d.error; $('ptEditorMsg').style.color = 'var(--bad)'; return; }
+  location.reload();
+}
+
+// --- pick signals ---
+let picked = new Set();
+function pickOpen() { $('pick').hidden = false; $('ptEditor').hidden = true; picked = new Set(); pickRender();
+  $('pick').scrollIntoView({behavior: 'smooth', block: 'start'}); $('pickFilter').focus(); }
+function pickCandidates() {
+  const used = new Set(PTS.filter(p => p.kind === 'value').map(p => p.source_id));
+  const q = $('pickFilter').value.trim().toLowerCase();
+  return SUBS.filter(s => !used.has(s.id) && (!q || (s.label + ' ' + s.measurement).toLowerCase().includes(q)));
+}
+function pickRender() {
+  const list = pickCandidates();
+  $('pickList').innerHTML = list.length ? list.slice(0, 500).map(s => `<label class="pick-item ${s.enabled ? '' : 'opacity-50'}">
+      <input type="checkbox" value="${s.id}" ${picked.has(s.id) ? 'checked' : ''} onchange="pickOne(this)"> <span>${esc(s.label)}</span></label>`).join('')
+    : '<p class="text-sm text-muted">No signals left to add.</p>';
+  $('pickAll').checked = list.length > 0 && list.every(s => picked.has(s.id));
+  $('pickCount').textContent = `${picked.size} selected` + (list.length > 500 ? ' · first 500 shown, use the filter' : '');
+  $('pickBtn').disabled = !picked.size;
+  $('pickBtn').textContent = picked.size ? `Add ${picked.size}` : 'Add';
+}
+function pickOne(cb) { cb.checked ? picked.add(cb.value) : picked.delete(cb.value); pickRender(); }
+function pickAllShown(on) { pickCandidates().forEach(s => on ? picked.add(s.id) : picked.delete(s.id)); pickRender(); }
+async function pickAdd() {
+  const r = await post('/outputs/points/add-signals', {ids: [...picked], area: $('pickArea').value, type: $('pickType').value,
+    bool_area: $('pickBool').value, status: $('pickStatus').checked});
+  const d = await r.json();
+  try { sessionStorage.setItem('outputs_msg', `${d.added} signal${d.added === 1 ? '' : 's'} added`); } catch {}
+  location.reload();
+}
+
+// --- live values ---
+async function refresh() {
+  try {
+    const d = await (await fetch('/outputs/values')).json();
+    srvShow(d.status);
+    document.querySelectorAll('#ptRows tr[data-id]').forEach(tr => {
+      const v = d.points[tr.dataset.id], cell = tr.querySelector('.pt-val'), ok = tr.querySelector('.pt-valid');
+      if (!v) return;
+      const p = PTS.find(x => x.id === tr.dataset.id);
+      cell.innerHTML = v.value === null || v.value === undefined ? '<span class="text-muted">—</span>' : esc(v.value === true ? '1' : v.value === false ? '0' : v.value);
+      cell.title = p.kind === 'received' ? (v.written ? 'written ' + new Date(v.written).toLocaleString() : 'not written yet') : '';
+      if (ok) { ok.textContent = v.valid ? '● valid' : '○ invalid'; ok.style.color = v.valid ? 'var(--ok, green)' : 'var(--bad)'; ok.className = 'pt-valid text-xs'; }
+    });
+  } catch {}
+}
+(function () { let t = null; try { t = sessionStorage.getItem('outputs_msg'); sessionStorage.removeItem('outputs_msg'); } catch {} if (t) msg(t); })();
+srvShow({{ status | tojson }});
+render();
+refresh();
+setInterval(refresh, 2000);
+</script>
+{% endblock %}
