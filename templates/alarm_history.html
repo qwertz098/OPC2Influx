@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+{% if not h.complete %}<meta http-equiv="refresh" content="3">{% endif %}
+<div class="page-header">
+  <h1>Alarm values</h1>
+  <a class="btn btn-tool btn-sm" href="/alarm-history/{{ h.id }}/export.csv">Export CSV</a>
+</div>
+<div class="card">
+  <div class="card-header">
+    <span>{{ h.ts | format_dt }} · {{ h.title.split(': ', 1)[1] if ': ' in h.title else h.title }}</span>
+    {% if rule %}<a class="text-sm" href="/config/alerts" style="margin-left:auto">Rule: {{ rule.name or rule.subscription_id }}</a>{% endif %}
+  </div>
+  <div class="card-body" style="padding:0">
+    {% if not h.complete %}
+    <p class="text-sm text-muted" style="padding:8px 16px;margin:0">Collecting the rows after the alarm … this page updates itself.</p>
+    {% endif %}
+    <div style="overflow-x:auto">
+    <table class="table alarm-values">
+      <thead><tr>
+        <th>Time</th><th class="num">Offset (s)</th>
+        {% for label, unit in heads %}<th class="num">{{ label }}{% if unit %} <span class="text-muted">[{{ unit }}]</span>{% endif %}</th>{% endfor %}
+        <th>Quality</th>
+      </tr></thead>
+      <tbody>
+        {% for ts, off, values in h.rows %}
+        <tr {% if off == 0 %}class="alarm-row"{% endif %}>
+          <td class="mono text-sm">{{ ts | format_dt }}</td>
+          <td class="num mono text-sm">{{ '%+g' % off if off else '0' }}</td>
+          {% for v in values %}<td class="num mono text-sm">{% if v.value is number %}{{ '%.6g' % v.value }}{% elif v.value is not none %}{{ v.value }}{% endif %}</td>{% endfor %}
+          <td class="text-xs text-muted">{% for v in values if v.quality != 'ok' %}{{ v.label }}: {{ v.quality }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+<p class="text-xs text-muted mt-2">Highlighted row: the alarm. Times in your browser's time zone. The newest 1000 alarm value histories are kept.</p>
+{% endblock %}

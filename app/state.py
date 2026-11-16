@@ -48,6 +48,7 @@ class Alarm:
     level: str        # "error" | "warning" | "info"
     source: str       # e.g. "opcua:plc_1" or "influx:primary"
     message: str
+    link: str = ""    # optional page with details, e.g. the values around an alarm
 
 
 @dataclass
@@ -75,12 +76,13 @@ class RuntimeState:
     # Alarm rules just saved with quiet setup: rule id → when (see AlarmRuleChecker)
     alarm_quiet_setup: dict[str, datetime] = field(default_factory=dict)
 
-    def add_alarm(self, level: str, source: str, message: str) -> None:
+    def add_alarm(self, level: str, source: str, message: str, link: str = "") -> None:
         self.active_alarms.append(Alarm(
             timestamp=datetime.now(timezone.utc),
             level=level,
             source=source,
             message=message,
+            link=link,
         ))
         # Keep only the last 100 alarms
         if len(self.active_alarms) > 100:

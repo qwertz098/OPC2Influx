@@ -15,6 +15,12 @@ from app.state import ServerStatus
 T0 = datetime.now(timezone.utc) - timedelta(hours=1)   # in the past: rows after an alarm need no waiting
 
 
+@pytest.fixture(autouse=True)
+def history_db(tmp_path, monkeypatch):
+    from app.alerting import history_store
+    monkeypatch.setattr(history_store, "db_path", lambda: tmp_path / "alarm_history.db")
+
+
 class _Mail:
     def __init__(self):
         self.sent = []
@@ -115,11 +121,33 @@ def test_without_history_mail_unchanged(state):
     assert checker.history.owners() == [] and not checker.busy
 
 
-def test_history_off_without_send_email(state):
+def test_history_stored_and_linked_without_send_email(state):
+    from app.alerting import history_store
     _rule(state, send_email=False)
     checker = RC.AlarmRuleChecker()
-    _run(checker, state, 3, lambda i: state._live.update(t=99.0 if i else 0.0))
-    assert state.alert_manager.sent == [] and checker.history.owners() == []
+    _run(checker, state, 6, lambda i: state._live.update(t=99.0 if i >= 4 else 0.0, p=float(i)))
+    assert state.alert_manager.sent == []
+    ev = state.active_alarms[-1]
+    assert ev.link.startswith("/alarm-history/")
+    h = history_store.get(int(ev.link.rsplit("/", 1)[1]))
+    assert h.complete and h.rule_id == "r1"
+    assert [off for _, off, _ in h.rows] == [-3.0, -2.0, -1.0, 0.0, 1.0, 2.0]
+    assert [v.label for v in h.rows[0][2]] == ["Temp", "Pressure"]
+
+
+@pytest.mark.asyncio
+async def test_history_page_and_csv(async_client):
+    from app.alerting import history_store
+    from app.references.store import RefValue
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [(t0 + timedelta(seconds=i), float(i - 1), [RefValue("t", "Temp", "°C", 20.0 + i)]) for i in range(3)]
+    hid = history_store.create("r1", t0 + timedelta(seconds=1), "Alarm x: Hot: 21 > 20", rows, complete=True)
+    c = async_client
+    r = await c.get(f"/alarm-history/{hid}")
+    assert r.status_code == 200 and 'class="alarm-row"' in r.text and "Temp" in r.text and "refresh" not in r.text
+    r = await c.get(f"/alarm-history/{hid}/export.csv")
+    assert r.headers["content-type"].startswith("text/csv") and "Temp [°C]" in r.text
+    assert (await c.get("/alarm-history/99999")).status_code == 404
 
 
 def test_alarm_signal_listed_once(state):
@@ -180,5 +208,5 @@ async def test_alerts_page_renders_history_fields(async_client):
         "history_enabled": "true", "history_pre": "10"})
     await async_client.post("/config/stale-watchdog", data={"subscription_id": "x", "window_seconds": "60"})
     r = await async_client.get("/config/alerts")
-    assert "Values in mail: 10 s before" in r.text
+    assert "Value history: 10 s before" in r.text
     assert r.status_code == 200 and 'name="history_enabled"' in r.text and 'id="histSubList"' in r.text

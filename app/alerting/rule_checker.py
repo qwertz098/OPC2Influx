@@ -2,9 +2,9 @@
 AlarmRuleChecker — evaluates threshold-based alarm rules every second.
 
 A rule with a value history keeps the values of its signals in a ring buffer.
-When it fires, the Event is listed at once; the e-mail waits for the rows
-after the alarm and then carries the rows before, the alarm row and the rows
-after it. While those rows are collected the rule is not evaluated, so the
+When it fires, the rows before it and the alarm row are stored and the Event
+is listed at once with a link to them; the rows after the alarm follow, then
+the e-mail (if on) carries all of them. While those rows are collected the rule is not evaluated, so the
 next alarm needs the usual latch / cooldown logic after that.
 """
 from __future__ import annotations
@@ -98,7 +98,7 @@ class AlarmRuleChecker:
 
     @staticmethod
     def has_history(rule: "AlarmRuleConfig") -> bool:
-        return rule.enabled and rule.send_email and rule.history.enabled
+        return rule.enabled and rule.history.enabled
 
     async def tick(self, state: "RuntimeState", now: datetime | None = None) -> None:
         """Check every enabled rule once against the latest polled values."""
@@ -182,45 +182,58 @@ class AlarmRuleChecker:
             last_triggered[rule.id] = now
             msg = f"{label}: {raw} {rule.condition} {rule.threshold}"
 
-            state.add_alarm("warning", "alarm", msg)
             logger.warning("Alarm triggered: %s", msg)
 
+            if rule.id in with_history:
+                await self._history_alarm(state, rule, label, msg, now)
+                continue
+            state.add_alarm("warning", "alarm", msg)
             if state.alert_manager and rule.send_email:
-                if rule.id in with_history:
-                    await self._history_alarm(state, rule, label, msg, now)
-                else:
-                    await state.alert_manager.send_alert(
-                        key=f"alarm:{rule.id}",
-                        subject=f"Alarm: {label}",
-                        body=msg,
-                    )
+                await state.alert_manager.send_alert(
+                    key=f"alarm:{rule.id}",
+                    subject=f"Alarm: {label}",
+                    body=msg,
+                )
 
     async def _history_alarm(self, state: "RuntimeState", rule: "AlarmRuleConfig",
                              label: str, msg: str, now: datetime) -> None:
-        """Rows before the alarm and the alarm row now; the rows after it and
-        the e-mail follow in a task."""
+        """Rows before the alarm and the alarm row are stored now, with the
+        Event linking to them; the rows after it and the e-mail follow in a task."""
+        from app.alerting import history_store
         signals = self.history_signals(rule)
         rows = [(ts, round((ts - now).total_seconds(), 1), vals) for ts, vals in self.history.before(rule.id, now)]
         rows.append((now, 0.0, snapshot(state, signals)))
+        title = f"Alarm {now.astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')}: {msg}"
         step = max(1, rule.history.step_seconds)
         after = side_rows(rule.history.post_seconds, step)
+        link = ""
+        try:
+            hid = history_store.create(rule.id, now, title, rows, complete=not after)
+            link = f"/alarm-history/{hid}"
+        except Exception as exc:
+            hid = None
+            logger.error("Alarm %s: storing the value history failed: %s", rule.id, exc)
+        state.add_alarm("warning", "alarm", msg, link=link)
         self.busy.add(rule.id)
-        task = asyncio.create_task(self._finish_history(state, rule.id, label, msg, signals, rows, now, step, after))
+        task = asyncio.create_task(self._finish_history(
+            state, rule.id, label, title, signals, rows, now, step, after, hid, rule.send_email))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    async def _finish_history(self, state: "RuntimeState", rule_id: str, label: str, msg: str,
+    async def _finish_history(self, state: "RuntimeState", rule_id: str, label: str, title: str,
                               signals: list[tuple[str, str]], rows: list, t0: datetime,
-                              step: int, after: int) -> None:
+                              step: int, after: int, hid: int | None, send_email: bool) -> None:
+        from app.alerting import history_store
         from app.alerting.history_mail import render
         try:
             for k in range(1, after + 1):
                 due = t0 + timedelta(seconds=k * step)
                 await asyncio.sleep(max(0.0, (due - datetime.now(timezone.utc)).total_seconds()))
                 rows.append((due, float(k * step), snapshot(state, signals)))
-            title = f"Alarm {t0.astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')}: {msg}"
-            text, html, csv_text = render(rows, title)
-            if state.alert_manager:
+            if hid is not None and after:
+                history_store.finish(hid, rows)
+            if send_email and state.alert_manager:
+                text, html, csv_text = render(rows, title)
                 await state.alert_manager.send_alert(
                     key=f"alarm:{rule_id}", subject=f"Alarm: {label}", body=text, html=html,
                     attachments=[(f"alarm_{t0.astimezone().strftime('%Y%m%d_%H%M%S')}.csv", csv_text)],
