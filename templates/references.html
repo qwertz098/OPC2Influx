@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Reference Tables</h1>
+  <button type="button" class="btn btn-tool btn-sm" onclick="refEdit(null)">+ New table</button>
+</div>
+
+{% if tables %}
+<div class="seg ref-tabs mb-3">
+  {% for t in tables %}
+  <a class="seg-btn {% if current and t.id == current.id %}active{% endif %}" href="/references?table={{ t.id }}">
+    {{ t.name }} <span class="text-muted text-xs">({{ counts.get(t.id, 0) }})</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card mb-3"><div class="card-body text-sm">
+  <p style="margin:0 0 6px"><strong>Reference tables</strong> keep characteristic values for later comparison,
+    e.g. at commissioning, after maintenance or for an acceptance test.</p>
+  <p class="text-muted" style="margin:0">Create a table with the signals you need. Each <em>Capture</em> writes one row with
+    the current value of every signal, the time, your name and an optional comment.</p>
+</div></div>
+{% endif %}
+
+{% if current %}
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span>{{ current.name }}</span>
+    <span class="text-muted text-xs">{{ entries | length }} rows · {{ current.signals | length }} signals</span>
+    {% if current.trigger.enabled %}
+    {% set tr = current.trigger %}
+    <span class="badge badge-dyn" title="Automatic capture when the condition becomes true{% if tr.delay_seconds %} and holds for {{ tr.delay_seconds }} s{% endif %}; the next one after it has cleared">
+      ⚡ Auto: {{ trigger_label }} {{ tr.condition }} {{ tr.threshold }}{% if tr.pre_seconds or tr.post_seconds %} · −{{ tr.pre_seconds }} s / +{{ tr.post_seconds }} s @ {{ tr.step_seconds }} s{% endif %}
+    </span>
+    {% endif %}
+    <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <button type="button" class="btn btn-tool btn-xs" onclick="refEdit('{{ current.id }}')">Edit table</button>
+      <select class="select select-sm" id="csvFormat" style="width:auto" title="CSV format">
+        <option value="standard">CSV ( , and . )</option>
+        <option value="excel_de">CSV Excel, German ( ; and , )</option>
+      </select>
+      <button type="button" class="btn btn-tool btn-xs" onclick="refExport('{{ current.id }}')">Export CSV</button>
+      <form action="/references/tables/{{ current.id }}/delete" method="post" style="display:inline"
+            onsubmit="return confirm('Delete table {{ current.name }} with all {{ entries | length }} rows?\n\nThis cannot be undone.')">
+        <button class="btn btn-danger btn-xs">Delete table</button>
+      </form>
+    </span>
+  </div>
+  <div class="card-body ref-capture">
+    <input class="input input-sm" id="refAuthor" placeholder="Name / initials" style="flex:0 0 140px" maxlength="80">
+    <input class="input input-sm" id="refComment" placeholder="Comment (optional)" style="flex:1;max-width:none" maxlength="2000"
+           onkeydown="if(event.key==='Enter')refCapture('{{ current.id }}')">
+    <button type="button" class="btn btn-primary btn-sm" id="refCaptureBtn" onclick="refCapture('{{ current.id }}')"
+            title="Write one row with the current value of every signal">● Capture values</button>
+    <span class="text-sm" id="refMsg"></span>
+  </div>
+
+  <div style="overflow-x:auto">
+  <table class="table fit-table ref-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        {% if has_events %}<th title="Automatic capture: event number and seconds relative to the trigger">Event</th>{% endif %}
+        {% for sid, label, unit in cols %}
+        <th class="ref-num ref-col" title="{{ label }}">{{ (label | e) | replace(".", ".<wbr>" | safe) | replace("_", "_<wbr>" | safe) }}{% if unit %} <span class="text-muted">[{{ unit }}]</span>{% endif %}</th>
+        {% endfor %}
+        <th>Name</th>
+        <th>Comment</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+      <tr id="ref-{{ e.id }}" data-event="{{ e.event if e.event is not none else '' }}" class="{% if e.offset_s == 0 %}ref-trigger{% elif e.event %}ref-event-row{% endif %}">
+        <td class="text-sm">{{ e.ts | format_dt }}</td>
+        {% if has_events %}
+        <td class="text-sm">{% if e.event %}⚡ {{ e.event }}{% if e.offset_s %} <span class="text-muted">{{ '%+g' | format(e.offset_s) }} s</span>{% endif %}{% endif %}</td>
+        {% endif %}
+        {% for sid, label, unit in cols %}
+        {% set v = e.value_of(sid) %}
+        <td class="ref-num mono text-sm">
+          {% if v is none %}<span class="text-muted">·</span>
+          {% elif v.quality == 'missing' or v.value is none %}<span class="text-red" title="No value at capture">–</span>
+          {% else %}{{ v.value }}{% if v.quality == 'offline' %} <span class="text-warn" title="Server not connected: last known value">⚠</span>{% endif %}{% endif %}
+        </td>
+        {% endfor %}
+        <td class="text-sm">{{ e.author }}</td>
+        <td class="fit text-sm" style="width:40%">
+          <div class="ellipsis ref-comment" title="{{ e.comment }}">{{ e.comment }}</div>
+        </td>
+        <td><div class="actions">
+          <button type="button" class="btn btn-ghost btn-xs" onclick="refComment({{ e.id }}, this)"
+                  data-comment="{{ e.comment }}">Comment</button>
+          <button type="button" class="btn btn-danger btn-xs" onclick="refDelete({{ e.id }}, this)"
+                  data-when="{{ e.ts.isoformat() }}">Delete</button>
+          {% if e.offset_s == 0 %}
+          <button type="button" class="btn btn-danger btn-xs" onclick="refDeleteEvent('{{ current.id }}', {{ e.event }})"
+                  title="Delete all rows of this event (before, trigger and after)">Delete event</button>
+          {% endif %}
+        </div></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ cols | length + 5 }}" class="text-muted text-sm" style="text-align:center;padding:16px">
+        No rows yet: press <strong>Capture values</strong>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Editor: new table or edit the current one -->
+<div class="card" id="refEditor" {% if tables %}hidden{% endif %}>
+  <div class="card-header" id="refEditorTitle">New reference table</div>
+  <div class="card-body">
+    <div class="form-row">
+      <div class="form-group" style="flex:0 0 320px">
+        <label class="form-label">Name</label>
+        <input class="input" id="refName" placeholder="Commissioning TG150" maxlength="80">
+      </div>
+    </div>
+    <table class="table fit-table" style="margin-bottom:8px">
+      <thead><tr><th>Signal (column)</th><th>Unit</th><th></th></tr></thead>
+      <tbody id="refSignals"></tbody>
+    </table>
+    <datalist id="refSubList">
+      {% for s in ref_subs %}<option value="{{ s.label }}"></option>{% endfor %}
+    </datalist>
+    <button type="button" class="btn btn-tool btn-xs" onclick="refAddSignal()">+ Signal</button>
+
+    <div class="ref-trigger-box">
+      <label class="checkbox-label"><input type="checkbox" id="trgOn" onchange="refTriggerUi()">
+        <strong>Automatic capture</strong> when a condition becomes true</label>
+      <div class="form-row" id="trgFields" style="margin:8px 0 0">
+        <div class="form-group" style="flex:2;min-width:220px">
+          <label class="form-label">Signal</label>
+          <input class="input input-sm" id="trgSig" list="refSubList" placeholder="Type to search subscriptions…" style="max-width:none">
+        </div>
+        <div class="form-group" style="flex:0 0 80px">
+          <label class="form-label">Condition</label>
+          <select class="select select-sm" id="trgCond">
+            <option value=">">&gt;</option><option value="<">&lt;</option><option value="=">=</option><option value="<>">&lt;&gt;</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:0 0 100px">
+          <label class="form-label">Value</label>
+          <input class="input input-sm" id="trgThr" placeholder="1.5 / true">
+        </div>
+        <div class="form-group" style="flex:0 0 90px">
+          <label class="form-label" title="The condition must hold this long before it triggers">Delay (s)</label>
+          <input class="input input-sm" id="trgDelay" type="number" min="0" value="0">
+        </div>
+        <div class="form-group" style="flex:0 0 100px">
+          <label class="form-label" title="Rows before the trigger, from a buffer kept in memory">Before (s)</label>
+          <input class="input input-sm" id="trgPre" type="number" min="0" max="3600" value="10">
+        </div>
+        <div class="form-group" style="flex:0 0 100px">
+          <label class="form-label" title="Rows after the trigger">After (s)</label>
+          <input class="input input-sm" id="trgPost" type="number" min="0" max="3600" value="0">
+        </div>
+        <div class="form-group" style="flex:0 0 90px">
+          <label class="form-label" title="Spacing of the rows before and after">Step</label>
+          <select class="select select-sm" id="trgStep">
+            <option value="1">1 s</option><option value="2">2 s</option><option value="5">5 s</option>
+            <option value="10">10 s</option><option value="30">30 s</option><option value="60">1 min</option>
+          </select>
+        </div>
+      </div>
+      <p class="text-xs text-muted" style="margin:6px 0 0">Each time the condition becomes true (after the delay) one event is
+        written: the rows before it, the trigger row with the comment "Auto: …" and the rows after it, all with the same event
+        number. The next event needs the condition to clear after the rows after it are written; a condition that is
+        already true when this is saved or the app starts does not count. Use the delay for noisy signals.
+        At most 300 rows before and 300 after.</p>
+    </div>
+    <p class="text-xs text-muted" style="margin:8px 0 0">Changing the signals later keeps existing rows as they were;
+      columns of removed signals stay visible as long as rows have values for them.</p>
+    <div class="form-actions form-actions--edit">
+      <span id="refEditorMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" onclick="refSave()">Save</button>
+      {% if tables %}<button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('refEditor').hidden = true">Cancel</button>{% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+const REF_TABLES = {{ tables_json | tojson }};
+const REF_SUBS = {{ ref_subs | tojson }};   // [{id, label}]
+let refEditId = null;
+const subLabel = id => (REF_SUBS.find(s => s.id === id) || {label: id}).label;
+const subId = label => (REF_SUBS.find(s => s.label === label) || {}).id || '';
+
+// Name / initials: remembered in this browser
+const AUTHOR_KEY = 'reference_author';
+const authorEl = document.getElementById('refAuthor');
+if (authorEl) {
+  try { authorEl.value = localStorage.getItem(AUTHOR_KEY) || ''; } catch {}
+  authorEl.addEventListener('change', () => { try { localStorage.setItem(AUTHOR_KEY, authorEl.value.trim()); } catch {} });
+}
+
+function refAddSignal(sig) {
+  sig = sig || {subscription_id: '', unit: ''};
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="fit" style="width:75%"><input class="input input-sm ref-sig" list="refSubList" placeholder="Type to search subscriptions…" style="max-width:none"></td>
+    <td><input class="input input-sm ref-unit" style="width:90px" placeholder="bar"></td>
+    <td><button type="button" class="btn btn-ghost btn-xs" style="color:var(--red)" title="Remove">✕</button></td>`;
+  tr.querySelector('.ref-sig').value = sig.subscription_id ? subLabel(sig.subscription_id) : '';
+  tr.querySelector('.ref-unit').value = sig.unit || '';
+  tr.querySelector('button').addEventListener('click', () => tr.remove());
+  document.getElementById('refSignals').appendChild(tr);
+}
+
+function refEdit(id) {
+  const t = REF_TABLES.find(x => x.id === id);
+  refEditId = t ? t.id : null;
+  document.getElementById('refEditorTitle').textContent = t ? 'Edit table ' + t.name : 'New reference table';
+  document.getElementById('refName').value = t ? t.name : '';
+  document.getElementById('refSignals').innerHTML = '';
+  (t ? t.signals : []).forEach(s => refAddSignal(s));
+  if (!t || !t.signals.length) refAddSignal();
+  const g = (t && t.trigger) || {enabled: false, subscription_id: '', condition: '>', threshold: '0',
+                                 delay_seconds: 0, pre_seconds: 10, post_seconds: 0, step_seconds: 1};
+  document.getElementById('trgOn').checked = !!g.enabled;
+  document.getElementById('trgSig').value = g.subscription_id ? subLabel(g.subscription_id) : '';
+  document.getElementById('trgCond').value = g.condition;
+  document.getElementById('trgThr').value = g.threshold;
+  document.getElementById('trgDelay').value = g.delay_seconds;
+  document.getElementById('trgPre').value = g.pre_seconds;
+  document.getElementById('trgPost').value = g.post_seconds;
+  document.getElementById('trgStep').value = String(g.step_seconds);
+  refTriggerUi();
+  document.getElementById('refEditorMsg').textContent = '';
+  const ed = document.getElementById('refEditor');
+  ed.hidden = false;
+  ed.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+async function refSave() {
+  const msg = document.getElementById('refEditorMsg');
+  const signals = [];
+  for (const tr of document.querySelectorAll('#refSignals tr')) {
+    const label = tr.querySelector('.ref-sig').value.trim();
+    if (!label) continue;
+    const id = subId(label);
+    if (!id) { msg.textContent = 'Unknown signal: ' + label; msg.style.color = 'var(--red)'; return; }
+    signals.push({subscription_id: id, unit: tr.querySelector('.ref-unit').value.trim()});
+  }
+  const trgLabel = document.getElementById('trgSig').value.trim();
+  const trigger = {enabled: document.getElementById('trgOn').checked, subscription_id: trgLabel ? subId(trgLabel) : '',
+    condition: document.getElementById('trgCond').value, threshold: document.getElementById('trgThr').value.trim() || '0',
+    delay_seconds: parseInt(document.getElementById('trgDelay').value) || 0,
+    pre_seconds: parseInt(document.getElementById('trgPre').value) || 0,
+    post_seconds: parseInt(document.getElementById('trgPost').value) || 0,
+    step_seconds: parseInt(document.getElementById('trgStep').value) || 1};
+  if (trigger.enabled && !trigger.subscription_id) {
+    msg.textContent = trgLabel ? 'Unknown trigger signal: ' + trgLabel : 'Choose the signal of the trigger';
+    msg.style.color = 'var(--red)'; return;
+  }
+  const resp = await fetch('/references/tables', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: refEditId, name: document.getElementById('refName').value, signals, trigger})});
+  const data = await resp.json();
+  if (!resp.ok) { msg.textContent = data.error || 'Save failed'; msg.style.color = 'var(--red)'; return; }
+  location.href = '/references?table=' + data.id;
+}
+
+async function refCapture(tableId) {
+  const btn = document.getElementById('refCaptureBtn'), msg = document.getElementById('refMsg');
+  btn.disabled = true; msg.textContent = 'Capturing…'; msg.style.color = '';
+  try { localStorage.setItem(AUTHOR_KEY, authorEl.value.trim()); } catch {}
+  try {
+    const resp = await fetch(`/references/tables/${tableId}/capture`, {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({author: authorEl.value, comment: document.getElementById('refComment').value})});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    if (data.problems.length) sessionStorage.setItem('reference_problems', data.problems.join(', '));
+    location.reload();
+  } catch (e) {
+    msg.textContent = 'Not captured: ' + e.message; msg.style.color = 'var(--red)'; btn.disabled = false;
+  }
+}
+(function showCaptureProblems() {
+  let p = null;
+  try { p = sessionStorage.getItem('reference_problems'); sessionStorage.removeItem('reference_problems'); } catch {}
+  const msg = document.getElementById('refMsg');
+  if (p && msg) { msg.textContent = 'Captured, but not all values were current: ' + p; msg.style.color = 'var(--warn, #b26b00)'; }
+})();
+
+async function refComment(id, btn) {
+  const text = prompt('Comment:', btn.dataset.comment || '');
+  if (text === null) return;
+  const resp = await fetch(`/references/entries/${id}/comment`, {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({comment: text})});
+  if (resp.ok) {
+    btn.dataset.comment = text;
+    const cell = document.querySelector(`#ref-${id} .ref-comment`);
+    cell.textContent = text; cell.title = text;
+  } else alert('Saving the comment failed');
+}
+
+async function refDelete(id, btn) {
+  const row = document.getElementById('ref-' + id);
+  const when = row.querySelector('time') ? row.querySelector('time').textContent : '';
+  if (!confirm(`Delete the row from ${when}?\n\nThis cannot be undone.`)) return;
+  const resp = await fetch(`/references/entries/${id}/delete`, {method: 'POST'});
+  if (resp.ok) row.remove(); else alert('Delete failed');
+}
+
+function refTriggerUi() {
+  const on = document.getElementById('trgOn').checked;
+  document.querySelectorAll('#trgFields input, #trgFields select').forEach(el => { el.disabled = !on; });
+  document.getElementById('trgFields').style.opacity = on ? '' : '.5';
+}
+
+async function refDeleteEvent(tableId, event) {
+  const n = document.querySelectorAll(`.ref-table tbody tr[data-event="${event}"]`).length;
+  if (!confirm(`Delete event ${event} with all its ${n} rows?\n\nThis cannot be undone.`)) return;
+  const resp = await fetch(`/references/tables/${tableId}/events/${event}/delete`, {method: 'POST'});
+  if (resp.ok) location.reload(); else alert('Delete failed');
+}
+
+function refExport(tableId) {
+  const fmt = document.getElementById('csvFormat').value;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  location.href = `/references/tables/${tableId}/export.csv?format=${fmt}&tz=${encodeURIComponent(tz)}`;
+}
+
+if (!REF_TABLES.length) refEdit(null);
+</script>
+{% endblock %}

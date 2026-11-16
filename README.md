@@ -250,6 +250,20 @@ Each signal buffer is capped at 2000 data points. When the limit is reached, the
 
 ---
 
+## Reference Tables
+
+The **References** tab keeps characteristic values for later comparison, e.g. at commissioning, after maintenance or for an acceptance test.
+
+- Create any number of tables, each with its own fixed list of signals (= columns) and an optional unit per signal.
+- **Capture values** writes one row with the current value of every signal, the time, your name / initials (remembered in the browser) and an optional comment. The values come from the latest poll; a signal that has not been polled yet is read from its server.
+- Each value carries a quality: ⚠ = the server was not connected (last known value), – = no value.
+- Comments can be changed later; rows are deleted after a confirmation.
+- **Export CSV**: all rows, oldest first, with the time in the browser's zone and in UTC; standard (`,` and `.`) or Excel German (`;` and `,`).
+- **Automatic capture** (optional, per table): a condition like an alarm rule (signal, `<` `=` `>` `<>`, value, delay). Each time it becomes true, one **event** is written: the rows before it (from a buffer in memory, e.g. the last 10 s in 1 s steps), the trigger row with the comment "Auto: …" and optionally rows after it. All rows of an event share its number and show their offset to the trigger (⚡ 3 −2 s); "Delete event" removes them together. The next event needs the condition to clear after the rows after it are written; a condition that is already true when the trigger is saved or the app starts does not count. At most 300 rows before and 300 after; the CSV has the columns Event and Offset (s).
+- Rows are stored in `references.db` in the data directory, with each signal's label and unit at capture time, so old rows stay correct when the signals of a table change. Table definitions are in `reference_tables.yaml` (part of the configuration backup); the rows themselves are not in the backup.
+
+---
+
 ## Servers
 
 Configure OPC UA server connections:
