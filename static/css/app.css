@@ -459,4 +459,9 @@ tr[id^="edit-"]:empty { display: none; }
 .text-warn { color: var(--warn, #b26b00); }
 .ref-table tr.ref-trigger td { background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 600; }
 .ref-table tr.ref-event-row td { color: var(--muted); }
+/* Alarm values page (linked from an Event) */
+.alarm-values td.num, .alarm-values th.num { text-align: right; }
+.alarm-values th { white-space: normal; text-transform: none; font-size: 12px; vertical-align: bottom; }
+.alarm-values tr.alarm-row td { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
+.event-link { margin-left: 6px; font-size: 12px; white-space: nowrap; }
 .ref-trigger-box { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }

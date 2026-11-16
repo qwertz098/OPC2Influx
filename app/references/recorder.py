@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
-from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -26,45 +24,23 @@ from app.config import ReferenceTableConfig
 from app.references import store
 from app.references.capture import capture, signal_label
 from app.references.store import RefValue
+from app.history_buffer import RingBuffer, side_rows, snapshot as history_snapshot
 
 if TYPE_CHECKING:
     from app.state import RuntimeState
 
 logger = logging.getLogger(__name__)
 
-MAX_SIDE_ROWS = 300      # at most this many rows before and after a trigger
-
-
-def side_rows(seconds: int, step: int) -> int:
-    return min(MAX_SIDE_ROWS, math.ceil(max(0, seconds) / max(1, step)))
-
-
 def snapshot(state: "RuntimeState", table: ReferenceTableConfig) -> list[RefValue]:
     """The table's values from the latest poll (no server reads: fast, every second)."""
-    subs = {s.id: s for s in state.config.subscriptions.subscriptions}
-    live = state.polling_engine.live_values() if state.polling_engine else {}
-    out = []
-    for sig in table.signals:
-        sub = subs.get(sig.subscription_id)
-        v = RefValue(sig.subscription_id, signal_label(state, sig.subscription_id), sig.unit)
-        raw = live.get(sig.subscription_id)
-        if sub is None or raw is None:
-            v.quality = "missing"
-        else:
-            v.value = int(raw) if isinstance(raw, bool) else raw if isinstance(raw, (int, float)) else str(raw)
-            status = state.server_status.get(sub.server_id)
-            v.quality = "ok" if status and status.connected else "offline"
-        out.append(v)
-    return out
+    return history_snapshot(state, [(s.subscription_id, s.unit) for s in table.signals])
 
 
 class ReferenceRecorder:
     TICK = 1.0
 
     def __init__(self) -> None:
-        self.buffers: dict[str, deque] = {}        # table → deque[(ts, values)]
-        self.buffer_key: dict[str, tuple] = {}
-        self.last_sample: dict[str, datetime] = {}
+        self.buffer = RingBuffer()                 # rows before a trigger, per table
         self.trigger_key: dict[str, tuple] = {}
         self.armed: dict[str, bool] = {}           # True: the condition was false, may trigger
         self.since: dict[str, datetime] = {}       # condition true since (delay)
@@ -82,7 +58,8 @@ class ReferenceRecorder:
                 logger.error("ReferenceRecorder error: %s", exc)
 
     def _forget(self, table_id: str) -> None:
-        for d in (self.buffers, self.buffer_key, self.last_sample, self.trigger_key, self.armed, self.since):
+        self.buffer.forget(table_id)
+        for d in (self.trigger_key, self.armed, self.since):
             d.pop(table_id, None)
 
     async def tick(self, state: "RuntimeState", now: datetime | None = None) -> None:
@@ -97,17 +74,8 @@ class ReferenceRecorder:
             step = max(1, trig.step_seconds)
 
             # Ring buffer for the rows before a trigger
-            bkey = (tuple(s.subscription_id for s in table.signals), step, trig.pre_seconds)
-            if self.buffer_key.get(table.id) != bkey:
-                self.buffer_key[table.id] = bkey
-                # +1: the sample of the trigger tick itself belongs to the trigger row
-                self.buffers[table.id] = deque(maxlen=side_rows(trig.pre_seconds, step) + 1)
-                self.last_sample.pop(table.id, None)
-            if trig.pre_seconds > 0:
-                last = self.last_sample.get(table.id)
-                if last is None or (now - last).total_seconds() >= step - 0.05:
-                    self.buffers[table.id].append((now, snapshot(state, table)))
-                    self.last_sample[table.id] = now
+            self.buffer.sample(table.id, now, state, [(x.subscription_id, x.unit) for x in table.signals],
+                               trig.pre_seconds, step)
 
             # Trigger condition (rising edge, after the delay)
             tkey = (trig.subscription_id, trig.condition, trig.threshold, trig.delay_seconds)
@@ -135,17 +103,16 @@ class ReferenceRecorder:
             self.armed[table.id] = False
             await self._fire(state, table, now, raw)
 
-        for table_id in list(self.buffer_key):              # disabled or removed tables
+        for table_id in set(self.buffer.owners()) | set(self.trigger_key):   # disabled or removed tables
             if table_id not in active:
                 self._forget(table_id)
 
     async def _fire(self, state: "RuntimeState", table: ReferenceTableConfig, now: datetime, raw) -> None:
         trig = table.trigger
         event = store.next_event(table.id)
-        for ts, values in list(self.buffers.get(table.id, ())):
-            if ts < now:
-                store.add_entry(table.id, values, ts=ts, event=event,
-                                offset_s=round((ts - now).total_seconds(), 1))
+        for ts, values in self.buffer.before(table.id, now):
+            store.add_entry(table.id, values, ts=ts, event=event,
+                            offset_s=round((ts - now).total_seconds(), 1))
         label = signal_label(state, trig.subscription_id)
         comment = f"Auto: {label} {trig.condition} {trig.threshold} ({raw})"
         store.add_entry(table.id, await capture(state, table), comment=comment, ts=now, event=event, offset_s=0.0)

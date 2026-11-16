@@ -5,6 +5,7 @@ import html
 from datetime import datetime
 from typing import Optional
 
+from app.alerting.mail_style import BODY, NUMS
 from app.reports.compute import ReportFigures, SignalFigures
 from app.reports.periods import PERIOD_LABELS
 
@@ -141,7 +142,7 @@ def html_body(fig: ReportFigures, tz_mode: str) -> str:
     def table(head: list[str], rows: list[list[str]]) -> str:
         has_err = any(r[-1] for r in rows)
         heads = head if has_err else head[:-1]
-        out = ['<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;margin:12px 0">',
+        out = [f'<table style="border-collapse:collapse;font-size:13px;{NUMS};margin:12px 0">',
                "<tr>" + "".join(f"<th {th1 if i == 0 else th}>{e(h)}</th>" for i, h in enumerate(heads)) + "</tr>"]
         for r in rows:
             cells = r if has_err else r[:-1]
@@ -152,7 +153,7 @@ def html_body(fig: ReportFigures, tz_mode: str) -> str:
 
     gauges = [s for s in fig.signals if s.kind == "gauge"]
     counters = [s for s in fig.signals if s.kind == "counter"]
-    parts = [f'<div style="font-family:Arial,sans-serif;font-size:14px;color:#222">',
+    parts = [f'<div style="{BODY}">',
              f"<h2 style=\"font-size:17px;margin:0 0 4px\">{e(subject(fig))}</h2>",
              f'<div style="color:#666;font-size:12px">Period {e(fmt_when(p.start, tz_mode))} – '
              f"{e(fmt_when(p.end, tz_mode))} ({'UTC' if tz_mode == 'utc' else 'local time'})"

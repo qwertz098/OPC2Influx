@@ -129,7 +129,7 @@ def test_disabled_trigger_does_nothing(state):
     t.trigger.enabled = False
     rec = ReferenceRecorder()
     _run(rec, state, 6, change=lambda i: state._live.update(err=i >= 2))
-    assert _rows() == [] and rec.buffers == {}
+    assert _rows() == [] and rec.buffer.owners() == []
 
 
 def test_no_rearm_while_rows_after_are_written(state):

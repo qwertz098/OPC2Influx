@@ -35,7 +35,8 @@
           <td class="mono text-sm">{{ alarm.timestamp | format_dt }}</td>
           <td><span class="badge badge-{{ alarm.level }}">{{ alarm.level }}</span></td>
           <td class="mono text-sm">{{ alarm.source }}</td>
-          <td>{{ alarm.message }}</td>
+          <td>{{ alarm.message }}{% if alarm.link %}
+            <a href="{{ alarm.link }}" class="event-link" title="Values before and after the alarm">Values ›</a>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

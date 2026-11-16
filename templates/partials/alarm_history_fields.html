@@ -1,0 +1,52 @@
+{# Value history of an alarm rule (h: AlarmHistoryConfig or None, hist_labels: id → label) #}
+{% set h_on = h.enabled if h else False %}
+<div class="alarm-history">
+  <label class="checkbox-label" title="Stores the values of chosen signals before and after the alarm. The Event links to them; with Send email they also go with the e-mail (table and CSV file).">
+    <input type="checkbox" name="history_enabled" value="true" {% if h_on %}checked{% endif %}
+           onchange="histToggle(this)">
+    Value history
+  </label>
+  <div class="alarm-history-fields" {% if not h_on %}hidden{% endif %}>
+    <div class="form-row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end;margin:6px 0 0">
+      <div class="form-group" style="flex:0 0 100px">
+        <label class="form-label" title="Rows before the alarm, from a buffer kept in memory">Before (s)</label>
+        <input class="input input-sm" type="number" name="history_pre" min="0" max="3600"
+               value="{{ h.pre_seconds if h else 60 }}">
+      </div>
+      <div class="form-group" style="flex:0 0 100px">
+        <label class="form-label" title="Rows after the alarm; the e-mail is sent once they are collected">After (s)</label>
+        <input class="input input-sm" type="number" name="history_post" min="0" max="3600"
+               value="{{ h.post_seconds if h else 30 }}">
+      </div>
+      <div class="form-group" style="flex:0 0 90px">
+        <label class="form-label" title="Spacing of the rows">Step</label>
+        {% set step = h.step_seconds if h else 1 %}
+        <select class="select select-sm" name="history_step">
+          {% for v, t in [(1,'1 s'),(2,'2 s'),(5,'5 s'),(10,'10 s'),(30,'30 s'),(60,'1 min')] %}
+          <option value="{{ v }}" {% if step == v %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <table class="table fit-table hist-sig-table" style="margin:6px 0 4px">
+      <thead><tr><th>More signals <span class="text-muted text-xs">(the alarm signal is always included)</span></th><th>Unit</th><th></th></tr></thead>
+      <tbody>
+        {% for s in (h.signals if h else []) %}
+        <tr>
+          <td class="fit" style="width:75%"><input class="input input-sm" name="history_signal" list="histSubList"
+                     value="{{ hist_labels.get(s.subscription_id, s.subscription_id) }}" style="max-width:none"
+                     placeholder="Type to search subscriptions…" oninput="histCheck(this)"></td>
+          <td><input class="input input-sm" name="history_unit" value="{{ s.unit }}" style="width:90px" placeholder="bar"></td>
+          <td><button type="button" class="btn btn-ghost btn-xs" style="color:var(--red)" title="Remove"
+                      onclick="this.closest('tr').remove()">✕</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="button" class="btn btn-tool btn-xs" onclick="histAdd(this)">+ Signal</button>
+    <p class="text-xs text-muted" style="margin:6px 0 0">The alarm is listed under Events at once, with a link
+      “Values ›” to the stored rows. With Send email, the e-mail follows when the rows after it are collected. Meanwhile the rule is not checked, so it cannot fire again during that time.
+      At most 300 rows before and 300 after. Up to 100 rows and 12 signals appear as a table in the mail;
+      the CSV file is always attached.</p>
+  </div>
+</div>
