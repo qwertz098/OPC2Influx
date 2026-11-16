@@ -35,11 +35,13 @@ def to_csv(table: ReferenceTableConfig, entries: list[RefEntry], excel_de: bool 
     cols = columns(table, entries)
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";" if excel_de else ",")
-    w.writerow([f"Time ({tz_name})", "Time (UTC)", "Name", "Comment"]
+    w.writerow([f"Time ({tz_name})", "Time (UTC)", "Event", "Offset (s)", "Name", "Comment"]
                + [_header(label, unit) for _, label, unit in cols] + ["Quality"])
     for e in sorted(entries, key=lambda e: (e.ts, e.id)):
+        offset = "" if e.offset_s is None else _format_value(e.offset_s, excel_de)
         row = [e.ts.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S"),
-               e.ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), e.author, e.comment]
+               e.ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+               "" if e.event is None else e.event, offset, e.author, e.comment]
         issues = []
         for sid, label, _ in cols:
             v = e.value_of(sid)

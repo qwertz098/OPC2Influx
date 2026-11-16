@@ -160,6 +160,8 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(StaleValueChecker().run(state), name="stale-watchdog")
     from app.reports.scheduler import ReportScheduler
     asyncio.create_task(ReportScheduler().run(state), name="report-scheduler")
+    from app.references.recorder import ReferenceRecorder
+    asyncio.create_task(ReferenceRecorder().run(state), name="reference-recorder")
     _scanner = FolderScanner(state)
     state.folder_scanner_task = asyncio.create_task(_scanner.run(), name="folder-scanner")
     state.folder_scanner = _scanner

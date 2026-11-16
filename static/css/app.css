@@ -457,3 +457,6 @@ tr[id^="edit-"]:empty { display: none; }
 .ref-table th.ref-col { white-space: normal; text-transform: none; font-size: 12px; min-width: 70px; max-width: 160px; vertical-align: bottom; }
 .ref-table th { vertical-align: bottom; }
 .text-warn { color: var(--warn, #b26b00); }
+.ref-table tr.ref-trigger td { background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 600; }
+.ref-table tr.ref-event-row td { color: var(--muted); }
+.ref-trigger-box { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }

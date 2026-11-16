@@ -83,13 +83,13 @@ def test_csv_standard_and_excel():
     # table signal first, then the removed signal that older rows still have
     assert [c[0] for c in columns(table, entries)] == ["s1", "s2"]
     std = to_csv(table, entries).splitlines()
-    assert std[0] == "Time (UTC),Time (UTC),Name,Comment,Pressure [bar],Temp [°C],Quality"
-    assert std[1] == "2026-11-15 21:47:53,2026-11-15 21:47:53,KK,after service,2.5,21.5,"   # oldest first
+    assert std[0] == "Time (UTC),Time (UTC),Event,Offset (s),Name,Comment,Pressure [bar],Temp [°C],Quality"
+    assert std[1] == "2026-11-15 21:47:53,2026-11-15 21:47:53,,,KK,after service,2.5,21.5,"   # oldest first
     assert std[2].endswith(",2.75,,Pressure: offline")
     xl = to_csv(table, entries, excel_de=True, tz=ZoneInfo("Europe/Berlin"), tz_name="Europe/Berlin")
     lines = xl.lstrip("﻿").splitlines()
     assert xl.startswith("﻿") and lines[0].startswith("Time (Europe/Berlin);Time (UTC);")
-    assert lines[1].startswith("2026-11-15 22:47:53;2026-11-15 21:47:53;KK;after service;2,5;21,5")
+    assert lines[1].startswith("2026-11-15 22:47:53;2026-11-15 21:47:53;;;KK;after service;2,5;21,5")
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────

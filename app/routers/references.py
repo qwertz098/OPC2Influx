@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from app.config import ReferenceSignalConfig, ReferenceTableConfig, save_references
+from app.config import ReferenceSignalConfig, ReferenceTableConfig, ReferenceTriggerConfig, save_references
 from app.dependencies import get_state
 from app.references import store
 from app.references.capture import capture, signal_label
@@ -41,6 +41,8 @@ async def references_page(request: Request, table: str = "", state: RuntimeState
         "current": current,
         "entries": entries,
         "cols": columns(current, entries) if current else [],
+        "has_events": any(e.event is not None for e in entries),
+        "trigger_label": signal_label(state, current.trigger.subscription_id) if current else "",
         "counts": store.count_entries(),
         "tables_json": [t.model_dump() for t in tables],
         "ref_subs": [{"id": s.id, "label": _choice_label(state, s)} for s in subs],
@@ -58,12 +60,22 @@ async def save_table(request: Request, state: RuntimeState = Depends(get_state))
     if not signals:
         return JSONResponse({"error": "Add at least one signal"}, status_code=400)
     name = (body.get("name") or "").strip()[:80] or "Reference"
+    try:
+        trigger = ReferenceTriggerConfig(**(body.get("trigger") or {}))
+    except (TypeError, ValueError) as exc:
+        return JSONResponse({"error": f"Invalid trigger: {exc}"}, status_code=400)
+    if trigger.enabled and not trigger.subscription_id:
+        return JSONResponse({"error": "Choose the signal of the trigger"}, status_code=400)
+    trigger.delay_seconds = max(0, min(trigger.delay_seconds, 86400))
+    trigger.step_seconds = max(1, min(trigger.step_seconds, 3600))
+    trigger.pre_seconds = max(0, min(trigger.pre_seconds, 3600))
+    trigger.post_seconds = max(0, min(trigger.post_seconds, 3600))
     table = _table(state, body.get("id") or "")
     if table is None:
-        table = ReferenceTableConfig(name=name, signals=signals)
+        table = ReferenceTableConfig(name=name, signals=signals, trigger=trigger)
         state.config.references.tables.append(table)
     else:
-        table.name, table.signals = name, signals
+        table.name, table.signals, table.trigger = name, signals, trigger
     save_references(state.config.references, state.config_dir)
     return JSONResponse({"ok": True, "id": table.id})
 
@@ -103,6 +115,14 @@ async def delete_entry(entry_id: int):
     if not store.delete_entry(entry_id):
         return JSONResponse({"error": "Entry not found"}, status_code=404)
     return JSONResponse({"ok": True})
+
+
+@router.post("/tables/{table_id}/events/{event}/delete")
+async def delete_event(table_id: str, event: int):
+    n = store.delete_event(table_id, event)
+    if not n:
+        return JSONResponse({"error": "Event not found"}, status_code=404)
+    return JSONResponse({"ok": True, "deleted": n})
 
 
 @router.get("/tables/{table_id}/export.csv")

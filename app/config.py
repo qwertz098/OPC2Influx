@@ -484,10 +484,23 @@ class ReferenceSignalConfig(BaseModel):
     unit: str = ""
 
 
+class ReferenceTriggerConfig(BaseModel):
+    """Automatic capture when a condition becomes true (like an alarm rule)."""
+    enabled: bool = False
+    subscription_id: str = ""
+    condition: Literal["<", "=", ">", "<>"] = ">"
+    threshold: str = "0"            # number, or true / false
+    delay_seconds: int = 0          # condition must hold this long before it triggers
+    pre_seconds: int = 0            # rows before the trigger (from a buffer in memory)
+    post_seconds: int = 0           # rows after the trigger
+    step_seconds: int = 1           # spacing of pre / post rows
+
+
 class ReferenceTableConfig(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     name: str = "Reference"
     signals: list[ReferenceSignalConfig] = []   # = the columns of the table
+    trigger: ReferenceTriggerConfig = Field(default_factory=ReferenceTriggerConfig)
 
 
 class ReferenceTablesConfig(BaseModel):
