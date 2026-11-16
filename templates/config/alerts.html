@@ -162,11 +162,15 @@
             <input type="checkbox" name="send_email" value="true" checked>
             Send email
           </label>
+          <label class="checkbox-label" style="margin-top:4px" title="If the condition is already met when you save (or enable) the rule, that counts as already reported: no alert now. Latch alerts once it has cleared and comes back, repeat after the cooldown.">
+            <input type="checkbox" name="quiet_setup" value="true" checked>
+            Quiet setup
+          </label>
         </div>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add Rule</button>
-        <span class="info-icon" title="Every second the signal's latest polled value is compared with Value.&#10;&#10;Condition: &lt; less than · = equal · &gt; greater than · &lt;&gt; not equal&#10;Value: a number (e.g. 4.9) or true / false&#10;&#10;Bool signals count as 1 (true) and 0 (false).&#10;Alarm while true: = true, = 1, &gt; 0 or &lt;&gt; false&#10;Alarm while false: = false, = 0 or &lt; 1&#10;&#10;Delay: the condition must hold this long without a break before the alarm fires (0 = at once). Filters short spikes.&#10;Once (latch): fires once when the condition becomes true and again only after it has cleared. Cooldown is not used.&#10;Without latch (repeat): fires again every Cooldown seconds while the condition holds.&#10;Send email: also sends an email via the SMTP settings. Every alarm is listed under Events on the dashboard.&#10;&#10;No value yet (server offline, never polled): the rule does nothing."><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+        <span class="info-icon" title="Every second the signal's latest polled value is compared with Value.&#10;&#10;Condition: &lt; less than · = equal · &gt; greater than · &lt;&gt; not equal&#10;Value: a number (e.g. 4.9) or true / false&#10;&#10;Bool signals count as 1 (true) and 0 (false).&#10;Alarm while true: = true, = 1, &gt; 0 or &lt;&gt; false&#10;Alarm while false: = false, = 0 or &lt; 1&#10;&#10;Delay: the condition must hold this long without a break before the alarm fires (0 = at once). Filters short spikes.&#10;Once (latch): fires once when the condition becomes true and again only after it has cleared. Cooldown is not used.&#10;Without latch (repeat): fires again every Cooldown seconds while the condition holds.&#10;Send email: also sends an email via the SMTP settings. Every alarm is listed under Events on the dashboard.&#10;Quiet setup: if the condition is already met when the rule is saved or enabled, no alert is sent for it; latch alerts again once it has cleared and comes back, repeat after the cooldown.&#10;&#10;No value yet (server offline, never polled): the rule does nothing."><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
       </div>
     </form>
   </div>

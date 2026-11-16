@@ -341,6 +341,9 @@ class AlarmRuleConfig(BaseModel):
     alert_delay_seconds: int = 0  # condition must hold for this many seconds before firing
     latch: bool = False           # True = fire once on rising edge, re-arm only after condition clears
     send_email: bool = True       # False = log alarm only, skip email
+    # Quiet setup: if the condition is already met when the rule is saved,
+    # edited or enabled, that counts as already reported (no alert, no mail)
+    quiet_setup: bool = True
 
 
 class AlarmRulesConfig(BaseModel):

@@ -479,6 +479,8 @@ The watchdog monitors the gap between data writes and triggers an email alert wh
 
 Define threshold conditions on any subscribed signal (e.g. `TotalPower_kW > 100`). When the condition becomes true the alarm activates; when it clears the alarm deactivates. Active alarms are shown on the Dashboard.
 
+**Quiet setup** (on by default): if the condition is already met when a rule is saved, edited or enabled, that counts as already reported, so setting up a rule does not send a mail right away. A latch rule alerts once the condition has cleared and comes back, a repeat rule after its cooldown. An entry under Events notes it. Without quiet setup the rule alerts at its first check.
+
 Email notifications for both Watchdog and Alarm Rules are sent via the SMTP config in **Settings** (see below).
 
 ### Reports

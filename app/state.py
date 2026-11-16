@@ -72,6 +72,8 @@ class RuntimeState:
     influx_status: dict[str, InfluxTargetStatus] = field(default_factory=dict)
     sqlite_status: dict[str, Any] = field(default_factory=dict)
     active_alarms: list[Alarm] = field(default_factory=list)
+    # Alarm rules just saved with quiet setup: rule id → when (see AlarmRuleChecker)
+    alarm_quiet_setup: dict[str, datetime] = field(default_factory=dict)
 
     def add_alarm(self, level: str, source: str, message: str) -> None:
         self.active_alarms.append(Alarm(

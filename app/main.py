@@ -98,9 +98,17 @@ def _make_jinja_env(templates: Jinja2Templates) -> None:
     templates.env.filters["slugify"] = slugify
 
     def format_dt(value) -> str:
+        """A server timestamp as <time>: the browser shows it in the viewer's
+        local time (static/js/app.js); without JS the UTC text stays."""
         if value is None:
             return "—"
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        from datetime import timezone
+        from markupsafe import Markup
+        if value.tzinfo is None:              # the app's timestamps are UTC
+            value = value.replace(tzinfo=timezone.utc)
+        utc = value.astimezone(timezone.utc)
+        return Markup('<time class="local-time" datetime="{}">{} UTC</time>').format(
+            utc.isoformat(), utc.strftime("%Y-%m-%d %H:%M:%S"))
     templates.env.filters["format_dt"] = format_dt
 
     def interval_label(ms: int) -> str:
