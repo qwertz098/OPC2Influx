@@ -9,6 +9,7 @@ import io
 from datetime import datetime
 from html import escape
 
+from app.alerting.mail_style import BODY, NUMS
 from app.references.store import RefValue
 
 Row = tuple[datetime, float, list[RefValue]]      # time, offset to the alarm (s), values
@@ -45,7 +46,7 @@ def _offset(o: float) -> str:
 def render(rows: list[Row], title: str) -> tuple[str, str, str]:
     """(text, html, csv) for the rows, oldest first."""
     if not rows:
-        return title, f"<p>{escape(title)}</p>", ""
+        return title, f'<div style="{BODY}"><p>{escape(title)}</p></div>', ""
     heads = [_header(v) for v in rows[0][2]]
     tz = rows[0][0].astimezone().strftime("%Z") or "local"
 
@@ -62,7 +63,9 @@ def render(rows: list[Row], title: str) -> tuple[str, str, str]:
         note = (f"{len(rows)} rows × {len(heads)} signals: too many values for a table in the mail, "
                 f"see the attached CSV file (at most {MAX_TABLE_ROWS} rows and {MAX_TABLE_SIGNALS} signals "
                 f"are shown as a table).")
-        return f"{title}\n\n{note}\n", f"<p>{escape(title)}</p><p style=\"color:#666\">{escape(note)}</p>", csv_text
+        return (f"{title}\n\n{note}\n",
+                f'<div style="{BODY}"><p style="margin:0 0 4px;font-weight:600">{escape(title)}</p>'
+                f'<p style="color:#666;margin:0">{escape(note)}</p></div>', csv_text)
 
     # Plain text: aligned columns
     table = [[f"Time ({tz})", "Offset (s)", *heads]] + [
@@ -72,11 +75,11 @@ def render(rows: list[Row], title: str) -> tuple[str, str, str]:
     text = title + "\n\nValues around the alarm (row with offset 0 = alarm):\n\n" + "\n".join(lines) + "\n"
 
     # HTML: the alarm row highlighted, problems in the last column
-    th = 'style="padding:3px 8px;border-bottom:1px solid #999;text-align:right;white-space:nowrap"'
-    td = 'style="padding:2px 8px;text-align:right;white-space:nowrap"'
-    out = [f'<p>{escape(title)}</p><p style="color:#666">Values around the alarm '
+    th = 'style="padding:4px 10px;border-bottom:2px solid #999;text-align:right;white-space:nowrap;color:#555;font-weight:600"'
+    td = 'style="padding:3px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid #eee"'
+    out = [f'<div style="{BODY}"><p style="margin:0 0 4px;font-weight:600">{escape(title)}</p><p style="color:#666;margin:0 0 10px">Values around the alarm '
            f'(highlighted row = alarm). Also attached as CSV.</p>',
-           '<table style="border-collapse:collapse;font-family:monospace;font-size:13px">',
+           f'<table style="border-collapse:collapse;font-size:13px;{NUMS}">',
            f'<tr><th {th}>Time ({escape(tz)})</th><th {th}>Offset (s)</th>'
            + "".join(f"<th {th}>{escape(h)}</th>" for h in heads) + f'<th {th}>Quality</th></tr>']
     for ts, off, values in rows:
@@ -84,5 +87,5 @@ def render(rows: list[Row], title: str) -> tuple[str, str, str]:
         out.append(f"<tr{bg}><td {td}>{_local(ts)}</td><td {td}>{_offset(off)}</td>"
                    + "".join(f"<td {td}>{escape(_fmt(v.value))}</td>" for v in values)
                    + f"<td {td}>{escape(_quality(values))}</td></tr>")
-    out.append("</table>")
+    out.append("</table></div>")
     return text, "\n".join(out), csv_text
