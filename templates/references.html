@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Reference Tables</h1>
+  <button type="button" class="btn btn-tool btn-sm" onclick="refEdit(null)">+ New table</button>
+</div>
+
+{% if tables %}
+<div class="seg ref-tabs mb-3">
+  {% for t in tables %}
+  <a class="seg-btn {% if current and t.id == current.id %}active{% endif %}" href="/references?table={{ t.id }}">
+    {{ t.name }} <span class="text-muted text-xs">({{ counts.get(t.id, 0) }})</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card mb-3"><div class="card-body text-sm">
+  <p style="margin:0 0 6px"><strong>Reference tables</strong> keep characteristic values for later comparison,
+    e.g. at commissioning, after maintenance or for an acceptance test.</p>
+  <p class="text-muted" style="margin:0">Create a table with the signals you need. Each <em>Capture</em> writes one row with
+    the current value of every signal, the time, your name and an optional comment.</p>
+</div></div>
+{% endif %}
+
+{% if current %}
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span>{{ current.name }}</span>
+    <span class="text-muted text-xs">{{ entries | length }} rows · {{ current.signals | length }} signals</span>
+    <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <button type="button" class="btn btn-tool btn-xs" onclick="refEdit('{{ current.id }}')">Edit table</button>
+      <select class="select select-sm" id="csvFormat" style="width:auto" title="CSV format">
+        <option value="standard">CSV ( , and . )</option>
+        <option value="excel_de">CSV Excel, German ( ; and , )</option>
+      </select>
+      <button type="button" class="btn btn-tool btn-xs" onclick="refExport('{{ current.id }}')">Export CSV</button>
+      <form action="/references/tables/{{ current.id }}/delete" method="post" style="display:inline"
+            onsubmit="return confirm('Delete table {{ current.name }} with all {{ entries | length }} rows?\n\nThis cannot be undone.')">
+        <button class="btn btn-danger btn-xs">Delete table</button>
+      </form>
+    </span>
+  </div>
+  <div class="card-body ref-capture">
+    <input class="input input-sm" id="refAuthor" placeholder="Name / initials" style="flex:0 0 140px" maxlength="80">
+    <input class="input input-sm" id="refComment" placeholder="Comment (optional)" style="flex:1;max-width:none" maxlength="2000"
+           onkeydown="if(event.key==='Enter')refCapture('{{ current.id }}')">
+    <button type="button" class="btn btn-primary btn-sm" id="refCaptureBtn" onclick="refCapture('{{ current.id }}')"
+            title="Write one row with the current value of every signal">● Capture values</button>
+    <span class="text-sm" id="refMsg"></span>
+  </div>
+
+  <div style="overflow-x:auto">
+  <table class="table fit-table ref-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        {% for sid, label, unit in cols %}
+        <th class="ref-num ref-col" title="{{ label }}">{{ (label | e) | replace(".", ".<wbr>" | safe) | replace("_", "_<wbr>" | safe) }}{% if unit %} <span class="text-muted">[{{ unit }}]</span>{% endif %}</th>
+        {% endfor %}
+        <th>Name</th>
+        <th>Comment</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+      <tr id="ref-{{ e.id }}">
+        <td class="text-sm">{{ e.ts | format_dt }}</td>
+        {% for sid, label, unit in cols %}
+        {% set v = e.value_of(sid) %}
+        <td class="ref-num mono text-sm">
+          {% if v is none %}<span class="text-muted">·</span>
+          {% elif v.quality == 'missing' or v.value is none %}<span class="text-red" title="No value at capture">–</span>
+          {% else %}{{ v.value }}{% if v.quality == 'offline' %} <span class="text-warn" title="Server not connected: last known value">⚠</span>{% endif %}{% endif %}
+        </td>
+        {% endfor %}
+        <td class="text-sm">{{ e.author }}</td>
+        <td class="fit text-sm" style="width:40%">
+          <div class="ellipsis ref-comment" title="{{ e.comment }}">{{ e.comment }}</div>
+        </td>
+        <td><div class="actions">
+          <button type="button" class="btn btn-ghost btn-xs" onclick="refComment({{ e.id }}, this)"
+                  data-comment="{{ e.comment }}">Comment</button>
+          <button type="button" class="btn btn-danger btn-xs" onclick="refDelete({{ e.id }}, this)"
+                  data-when="{{ e.ts.isoformat() }}">Delete</button>
+        </div></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ cols | length + 4 }}" class="text-muted text-sm" style="text-align:center;padding:16px">
+        No rows yet: press <strong>Capture values</strong>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Editor: new table or edit the current one -->
+<div class="card" id="refEditor" {% if tables %}hidden{% endif %}>
+  <div class="card-header" id="refEditorTitle">New reference table</div>
+  <div class="card-body">
+    <div class="form-row">
+      <div class="form-group" style="flex:0 0 320px">
+        <label class="form-label">Name</label>
+        <input class="input" id="refName" placeholder="Commissioning TG150" maxlength="80">
+      </div>
+    </div>
+    <table class="table fit-table" style="margin-bottom:8px">
+      <thead><tr><th>Signal (column)</th><th>Unit</th><th></th></tr></thead>
+      <tbody id="refSignals"></tbody>
+    </table>
+    <datalist id="refSubList">
+      {% for s in ref_subs %}<option value="{{ s.label }}"></option>{% endfor %}
+    </datalist>
+    <button type="button" class="btn btn-tool btn-xs" onclick="refAddSignal()">+ Signal</button>
+    <p class="text-xs text-muted" style="margin:8px 0 0">Changing the signals later keeps existing rows as they were;
+      columns of removed signals stay visible as long as rows have values for them.</p>
+    <div class="form-actions form-actions--edit">
+      <span id="refEditorMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" onclick="refSave()">Save</button>
+      {% if tables %}<button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('refEditor').hidden = true">Cancel</button>{% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+const REF_TABLES = {{ tables_json | tojson }};
+const REF_SUBS = {{ ref_subs | tojson }};   // [{id, label}]
+let refEditId = null;
+const subLabel = id => (REF_SUBS.find(s => s.id === id) || {label: id}).label;
+const subId = label => (REF_SUBS.find(s => s.label === label) || {}).id || '';
+
+// Name / initials: remembered in this browser
+const AUTHOR_KEY = 'reference_author';
+const authorEl = document.getElementById('refAuthor');
+if (authorEl) {
+  try { authorEl.value = localStorage.getItem(AUTHOR_KEY) || ''; } catch {}
+  authorEl.addEventListener('change', () => { try { localStorage.setItem(AUTHOR_KEY, authorEl.value.trim()); } catch {} });
+}
+
+function refAddSignal(sig) {
+  sig = sig || {subscription_id: '', unit: ''};
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="fit" style="width:75%"><input class="input input-sm ref-sig" list="refSubList" placeholder="Type to search subscriptions…" style="max-width:none"></td>
+    <td><input class="input input-sm ref-unit" style="width:90px" placeholder="bar"></td>
+    <td><button type="button" class="btn btn-ghost btn-xs" style="color:var(--red)" title="Remove">✕</button></td>`;
+  tr.querySelector('.ref-sig').value = sig.subscription_id ? subLabel(sig.subscription_id) : '';
+  tr.querySelector('.ref-unit').value = sig.unit || '';
+  tr.querySelector('button').addEventListener('click', () => tr.remove());
+  document.getElementById('refSignals').appendChild(tr);
+}
+
+function refEdit(id) {
+  const t = REF_TABLES.find(x => x.id === id);
+  refEditId = t ? t.id : null;
+  document.getElementById('refEditorTitle').textContent = t ? 'Edit table ' + t.name : 'New reference table';
+  document.getElementById('refName').value = t ? t.name : '';
+  document.getElementById('refSignals').innerHTML = '';
+  (t ? t.signals : []).forEach(s => refAddSignal(s));
+  if (!t || !t.signals.length) refAddSignal();
+  document.getElementById('refEditorMsg').textContent = '';
+  const ed = document.getElementById('refEditor');
+  ed.hidden = false;
+  ed.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+async function refSave() {
+  const msg = document.getElementById('refEditorMsg');
+  const signals = [];
+  for (const tr of document.querySelectorAll('#refSignals tr')) {
+    const label = tr.querySelector('.ref-sig').value.trim();
+    if (!label) continue;
+    const id = subId(label);
+    if (!id) { msg.textContent = 'Unknown signal: ' + label; msg.style.color = 'var(--red)'; return; }
+    signals.push({subscription_id: id, unit: tr.querySelector('.ref-unit').value.trim()});
+  }
+  const resp = await fetch('/references/tables', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: refEditId, name: document.getElementById('refName').value, signals})});
+  const data = await resp.json();
+  if (!resp.ok) { msg.textContent = data.error || 'Save failed'; msg.style.color = 'var(--red)'; return; }
+  location.href = '/references?table=' + data.id;
+}
+
+async function refCapture(tableId) {
+  const btn = document.getElementById('refCaptureBtn'), msg = document.getElementById('refMsg');
+  btn.disabled = true; msg.textContent = 'Capturing…'; msg.style.color = '';
+  try { localStorage.setItem(AUTHOR_KEY, authorEl.value.trim()); } catch {}
+  try {
+    const resp = await fetch(`/references/tables/${tableId}/capture`, {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({author: authorEl.value, comment: document.getElementById('refComment').value})});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    if (data.problems.length) sessionStorage.setItem('reference_problems', data.problems.join(', '));
+    location.reload();
+  } catch (e) {
+    msg.textContent = 'Not captured: ' + e.message; msg.style.color = 'var(--red)'; btn.disabled = false;
+  }
+}
+(function showCaptureProblems() {
+  let p = null;
+  try { p = sessionStorage.getItem('reference_problems'); sessionStorage.removeItem('reference_problems'); } catch {}
+  const msg = document.getElementById('refMsg');
+  if (p && msg) { msg.textContent = 'Captured, but not all values were current: ' + p; msg.style.color = 'var(--warn, #b26b00)'; }
+})();
+
+async function refComment(id, btn) {
+  const text = prompt('Comment:', btn.dataset.comment || '');
+  if (text === null) return;
+  const resp = await fetch(`/references/entries/${id}/comment`, {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({comment: text})});
+  if (resp.ok) {
+    btn.dataset.comment = text;
+    const cell = document.querySelector(`#ref-${id} .ref-comment`);
+    cell.textContent = text; cell.title = text;
+  } else alert('Saving the comment failed');
+}
+
+async function refDelete(id, btn) {
+  const row = document.getElementById('ref-' + id);
+  const when = row.querySelector('time') ? row.querySelector('time').textContent : '';
+  if (!confirm(`Delete the row from ${when}?\n\nThis cannot be undone.`)) return;
+  const resp = await fetch(`/references/entries/${id}/delete`, {method: 'POST'});
+  if (resp.ok) row.remove(); else alert('Delete failed');
+}
+
+function refExport(tableId) {
+  const fmt = document.getElementById('csvFormat').value;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  location.href = `/references/tables/${tableId}/export.csv?format=${fmt}&tz=${encodeURIComponent(tz)}`;
+}
+
+if (!REF_TABLES.length) refEdit(null);
+</script>
+{% endblock %}

@@ -476,6 +476,25 @@ class ReportsConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Reference tables: characteristic values captured on demand
+# ---------------------------------------------------------------------------
+
+class ReferenceSignalConfig(BaseModel):
+    subscription_id: str
+    unit: str = ""
+
+
+class ReferenceTableConfig(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    name: str = "Reference"
+    signals: list[ReferenceSignalConfig] = []   # = the columns of the table
+
+
+class ReferenceTablesConfig(BaseModel):
+    tables: list[ReferenceTableConfig] = []
+
+
+# ---------------------------------------------------------------------------
 # Aggregate app config
 # ---------------------------------------------------------------------------
 
@@ -492,6 +511,7 @@ class AppConfig(BaseModel):
     dynamic_folders: DynamicFoldersConfig = Field(default_factory=DynamicFoldersConfig)
     app_settings: AppSettingsConfig = Field(default_factory=AppSettingsConfig)
     reports: ReportsConfig = Field(default_factory=ReportsConfig)
+    references: ReferenceTablesConfig = Field(default_factory=ReferenceTablesConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +538,12 @@ def load_config(config_dir: Path) -> AppConfig:
         dynamic_folders=_load_model(DynamicFoldersConfig, d / "dynamic_folders.yaml"),
         app_settings=_load_model(AppSettingsConfig, d / "app_settings.yaml"),
         reports=_load_model(ReportsConfig, d / "reports.yaml"),
+        references=_load_model(ReferenceTablesConfig, d / "reference_tables.yaml"),
     )
+
+
+def save_references(config: ReferenceTablesConfig, config_dir: Path) -> None:
+    _save_yaml(config_dir / "reference_tables.yaml", config.model_dump())
 
 
 def save_reports(config: ReportsConfig, config_dir: Path) -> None:

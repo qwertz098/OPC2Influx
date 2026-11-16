@@ -33,7 +33,7 @@ from app.routers import (
     dashboard, opcua_browser, subscriptions,
     server_config, influxdb_config, alerts_config,
 )
-from app.routers import sqlite_config, config_backup, tags_config, alarm_rules, data_viewer, reports
+from app.routers import sqlite_config, config_backup, tags_config, alarm_rules, data_viewer, reports, references
 from app.routers import chart, help_page, dynamic_folders, app_settings, stale_watchdog
 
 logging.basicConfig(
@@ -203,6 +203,7 @@ app.include_router(server_config.router)
 app.include_router(influxdb_config.router)
 app.include_router(alerts_config.router)
 app.include_router(reports.router)
+app.include_router(references.router)
 app.include_router(sqlite_config.router)
 app.include_router(config_backup.router)
 app.include_router(tags_config.router)
@@ -221,6 +222,6 @@ _make_jinja_env(_templates)
 for router_mod in [dashboard, opcua_browser, subscriptions, chart, help_page,
                    server_config, influxdb_config, alerts_config,
                    sqlite_config, config_backup, tags_config, alarm_rules, data_viewer,
-                   app_settings, stale_watchdog]:
+                   app_settings, stale_watchdog, references]:
     if hasattr(router_mod, "templates"):
         _make_jinja_env(router_mod.templates)

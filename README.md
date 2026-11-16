@@ -250,6 +250,19 @@ Each signal buffer is capped at 2000 data points. When the limit is reached, the
 
 ---
 
+## Reference Tables
+
+The **References** tab keeps characteristic values for later comparison, e.g. at commissioning, after maintenance or for an acceptance test.
+
+- Create any number of tables, each with its own fixed list of signals (= columns) and an optional unit per signal.
+- **Capture values** writes one row with the current value of every signal, the time, your name / initials (remembered in the browser) and an optional comment. The values come from the latest poll; a signal that has not been polled yet is read from its server.
+- Each value carries a quality: ⚠ = the server was not connected (last known value), – = no value.
+- Comments can be changed later; rows are deleted after a confirmation.
+- **Export CSV**: all rows, oldest first, with the time in the browser's zone and in UTC; standard (`,` and `.`) or Excel German (`;` and `,`).
+- Rows are stored in `references.db` in the data directory, with each signal's label and unit at capture time, so old rows stay correct when the signals of a table change. Table definitions are in `reference_tables.yaml` (part of the configuration backup); the rows themselves are not in the backup.
+
+---
+
 ## Servers
 
 Configure OPC UA server connections:
