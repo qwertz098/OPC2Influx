@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.config import AlarmRuleConfig, save_alarm_rules
+from app.config import AlarmHistoryConfig, AlarmHistorySignalConfig, AlarmRuleConfig, save_alarm_rules
 from app.dependencies import get_state
 from app.state import RuntimeState
 
@@ -18,6 +18,38 @@ def _quiet(state: RuntimeState, rule: AlarmRuleConfig) -> None:
         state.alarm_quiet_setup[rule.id] = datetime.now(timezone.utc)
     else:
         state.alarm_quiet_setup.pop(rule.id, None)
+
+def choice_label(sub) -> str:
+    """How a signal is offered in the pickers of the alerts page."""
+    name = sub.display_name or sub.node_id
+    return name if name == sub.influxdb.measurement else f"{name} · {sub.influxdb.measurement}"
+
+
+def _int(form, name: str, default: int, lo: int, hi: int) -> int:
+    try:
+        return max(lo, min(hi, int(form.get(name) or default)))
+    except ValueError:
+        return default
+
+
+def _history(state: RuntimeState, form) -> AlarmHistoryConfig:
+    """The value history fields of the rule form (signals by label or ID)."""
+    by_label = {choice_label(s): s.id for s in state.config.subscriptions.subscriptions}
+    ids = {s.id for s in state.config.subscriptions.subscriptions}
+    signals = []
+    for text, unit in zip(form.getlist("history_signal"), form.getlist("history_unit")):
+        text = text.strip()
+        sub_id = by_label.get(text) or (text if text in ids else "")
+        if sub_id and sub_id not in (x.subscription_id for x in signals):
+            signals.append(AlarmHistorySignalConfig(subscription_id=sub_id, unit=unit.strip()))
+    return AlarmHistoryConfig(
+        enabled=form.get("history_enabled") == "true",
+        signals=signals,
+        pre_seconds=_int(form, "history_pre", 60, 0, 3600),
+        post_seconds=_int(form, "history_post", 30, 0, 3600),
+        step_seconds=_int(form, "history_step", 1, 1, 3600),
+    )
+
 
 router = APIRouter(prefix="/config/alarm-rules")
 templates = Jinja2Templates(directory="templates")
@@ -41,6 +73,7 @@ async def add_rule(request: Request, state: RuntimeState = Depends(get_state)):
         latch=form.get("latch") == "true",
         send_email=form.get("send_email") == "true",
         quiet_setup=form.get("quiet_setup") == "true",
+        history=_history(state, form),
     )
     state.config.alarm_rules.rules.append(rule)
     _quiet(state, rule)
@@ -58,6 +91,7 @@ async def edit_rule(rule_id: str, request: Request, state: RuntimeState = Depend
         "request": request,
         "rule": rule,
         "subscriptions": subs,
+        "hist_labels": {s.id: choice_label(s) for s in subs},
     })
 
 
@@ -75,6 +109,7 @@ async def update_rule(rule_id: str, request: Request, state: RuntimeState = Depe
             rule.latch = form.get("latch") == "true"
             rule.send_email = form.get("send_email") == "true"
             rule.quiet_setup = form.get("quiet_setup") == "true"
+            rule.history = _history(state, form)
             _quiet(state, rule)
             break
     save_alarm_rules(state.config.alarm_rules, state.config_dir)

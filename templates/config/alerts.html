@@ -89,6 +89,9 @@
             {% endif %}
             {% if rule.send_email %}
             <span class="text-muted text-xs" title="Email alert enabled">✉</span>
+            {% if rule.history.enabled %}
+            <span class="text-muted text-xs" title="Values in mail: {{ rule.history.pre_seconds }} s before, {{ rule.history.post_seconds }} s after, {{ 1 + rule.history.signals | length }} signal(s)">▤</span>
+            {% endif %}
             {% endif %}
           </td>
           <td>
@@ -168,9 +171,10 @@
           </label>
         </div>
       </div>
+      {% with h = None %}{% include "partials/alarm_history_fields.html" %}{% endwith %}
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Add Rule</button>
-        <span class="info-icon" title="Every second the signal's latest polled value is compared with Value.&#10;&#10;Condition: &lt; less than · = equal · &gt; greater than · &lt;&gt; not equal&#10;Value: a number (e.g. 4.9) or true / false&#10;&#10;Bool signals count as 1 (true) and 0 (false).&#10;Alarm while true: = true, = 1, &gt; 0 or &lt;&gt; false&#10;Alarm while false: = false, = 0 or &lt; 1&#10;&#10;Delay: the condition must hold this long without a break before the alarm fires (0 = at once). Filters short spikes.&#10;Once (latch): fires once when the condition becomes true and again only after it has cleared. Cooldown is not used.&#10;Without latch (repeat): fires again every Cooldown seconds while the condition holds.&#10;Send email: also sends an email via the SMTP settings. Every alarm is listed under Events on the dashboard.&#10;Quiet setup: if the condition is already met when the rule is saved or enabled, no alert is sent for it; latch alerts again once it has cleared and comes back, repeat after the cooldown.&#10;&#10;No value yet (server offline, never polled): the rule does nothing."><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+        <span class="info-icon" title="Every second the signal's latest polled value is compared with Value.&#10;&#10;Condition: &lt; less than · = equal · &gt; greater than · &lt;&gt; not equal&#10;Value: a number (e.g. 4.9) or true / false&#10;&#10;Bool signals count as 1 (true) and 0 (false).&#10;Alarm while true: = true, = 1, &gt; 0 or &lt;&gt; false&#10;Alarm while false: = false, = 0 or &lt; 1&#10;&#10;Delay: the condition must hold this long without a break before the alarm fires (0 = at once). Filters short spikes.&#10;Once (latch): fires once when the condition becomes true and again only after it has cleared. Cooldown is not used.&#10;Without latch (repeat): fires again every Cooldown seconds while the condition holds.&#10;Send email: also sends an email via the SMTP settings. Every alarm is listed under Events on the dashboard.&#10;Quiet setup: if the condition is already met when the rule is saved or enabled, no alert is sent for it; latch alerts again once it has cleared and comes back, repeat after the cooldown.&#10;Values in mail: the e-mail also carries the values of the alarm signal and further signals before and after the alarm (table and CSV file). It is sent once the rows after the alarm are collected; meanwhile the rule cannot fire again.&#10;&#10;No value yet (server offline, never polled): the rule does nothing."><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="4.9" r="1" fill="currentColor"/><path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
       </div>
     </form>
   </div>
@@ -346,7 +350,29 @@ function validateStaleSubId() {
      background:var(--surface,#fff);border:1px solid var(--border,#ddd);border-radius:4px;
      max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>
 
+<datalist id="histSubList">
+  {% for label in hist_labels.values() %}<option value="{{ label }}"></option>{% endfor %}
+</datalist>
 <script>
+const HIST_LABELS = new Set({{ hist_labels.values() | list | tojson }});
+function histToggle(cb) {
+  cb.closest('.alarm-history').querySelector('.alarm-history-fields').hidden = !cb.checked;
+}
+function histCheck(inp) {
+  const v = inp.value.trim();
+  inp.setCustomValidity(!v || HIST_LABELS.has(v) ? '' : 'Choose a signal from the list');
+}
+function histAdd(btn) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="fit" style="width:75%"><input class="input input-sm" name="history_signal" list="histSubList"
+        style="max-width:none" placeholder="Type to search subscriptions…" oninput="histCheck(this)"></td>
+    <td><input class="input input-sm" name="history_unit" style="width:90px" placeholder="bar"></td>
+    <td><button type="button" class="btn btn-ghost btn-xs" style="color:var(--red)" title="Remove"
+                onclick="this.closest('tr').remove()">✕</button></td>`;
+  btn.closest('.alarm-history').querySelector('.hist-sig-table tbody').appendChild(tr);
+  tr.querySelector('input').focus();
+}
 function alarmRuleEdit(id) {
   fetch('/config/alarm-rules/' + id + '/edit')
     .then(r => r.text())

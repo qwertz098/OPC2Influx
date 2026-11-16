@@ -330,6 +330,21 @@ class SQLiteConfig(BaseModel):
 # Alarm rules config
 # ---------------------------------------------------------------------------
 
+class AlarmHistorySignalConfig(BaseModel):
+    subscription_id: str
+    unit: str = ""
+
+
+class AlarmHistoryConfig(BaseModel):
+    """Values around the alarm, sent with its e-mail as a table and CSV file.
+    The alarm signal is always included; ``signals`` are the extra ones."""
+    enabled: bool = False
+    signals: list[AlarmHistorySignalConfig] = []
+    pre_seconds: int = 60
+    post_seconds: int = 30
+    step_seconds: int = 1
+
+
 class AlarmRuleConfig(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     name: str = ""
@@ -344,6 +359,7 @@ class AlarmRuleConfig(BaseModel):
     # Quiet setup: if the condition is already met when the rule is saved,
     # edited or enabled, that counts as already reported (no alert, no mail)
     quiet_setup: bool = True
+    history: AlarmHistoryConfig = Field(default_factory=AlarmHistoryConfig)
 
 
 class AlarmRulesConfig(BaseModel):

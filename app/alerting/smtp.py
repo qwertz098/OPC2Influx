@@ -34,8 +34,10 @@ class AlertManager:
     def update_config(self, smtp_cfg: SmtpConfig) -> None:
         self._cfg = smtp_cfg
 
-    async def send_alert(self, key: str, subject: str, body: str) -> None:
-        """Send an alert email, suppressing duplicates within COOLDOWN_SECONDS."""
+    async def send_alert(self, key: str, subject: str, body: str, html: Optional[str] = None,
+                         attachments: Optional[list[tuple[str, str]]] = None) -> None:
+        """Send an alert email, suppressing duplicates within COOLDOWN_SECONDS.
+        attachments: (file name, text) pairs, e.g. a CSV file."""
         now = datetime.now(timezone.utc)
         last = self._last_sent.get(key)
         if last and (now - last) < timedelta(seconds=COOLDOWN_SECONDS):
@@ -52,7 +54,7 @@ class AlertManager:
             return
 
         try:
-            await self._send(subject, body)
+            await self._send(subject, body, html=html, attachments=attachments)
             self._last_sent[key] = now
             logger.info("Alert sent: %s", subject)
         except Exception as exc:
@@ -85,16 +87,25 @@ class AlertManager:
         await self._send(subject, text, to=recipients, html=html)
 
     async def _send(self, subject: str, body: str, to: Optional[list[str]] = None,
-                    html: Optional[str] = None) -> None:
+                    html: Optional[str] = None, attachments: Optional[list[tuple[str, str]]] = None) -> None:
         cfg = effective_smtp(self._cfg)
         msg = MIMEMultipart("alternative")
+        content = msg
+        if attachments:
+            # mixed: the text / html alternative first, then the files
+            msg = MIMEMultipart("mixed")
+            msg.attach(content)
         prefix = f"[OpcUA2InfluxDB · {self._site_name}]" if self._site_name else "[OpcUA2InfluxDB]"
         msg["Subject"] = f"{prefix} {subject}"
         msg["From"] = cfg.from_address or cfg.username
         msg["To"] = ", ".join(to if to is not None else cfg.to_addresses)
-        msg.attach(MIMEText(body, "plain"))
+        content.attach(MIMEText(body, "plain"))
         if html:
-            msg.attach(MIMEText(html, "html"))   # last part = preferred by mail clients
+            content.attach(MIMEText(html, "html"))   # last part = preferred by mail clients
+        for name, text in attachments or ():
+            part = MIMEText(text, "csv" if name.endswith(".csv") else "plain", "utf-8")
+            part.add_header("Content-Disposition", "attachment", filename=name)
+            msg.attach(part)
 
         import aiosmtplib   # ~14 MB, loaded on the first alert mail
         await aiosmtplib.send(

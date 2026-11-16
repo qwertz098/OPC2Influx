@@ -15,7 +15,7 @@ def _mgr_with_mock() -> tuple:
     mgr = AlertManager(SmtpConfig(host="smtp.test.local", to_addresses=["test@test.com"]))
     sent = []
 
-    async def mock_send(subject, body):
+    async def mock_send(subject, body, **kw):
         sent.append(subject)
 
     mgr._send = mock_send
