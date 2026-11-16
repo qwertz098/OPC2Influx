@@ -403,3 +403,19 @@ function showToast(msg, type) {
   toast.className = 'toast toast-' + (type || 'info') + ' show';
   setTimeout(() => { toast.className = 'toast'; }, 3000);
 }
+
+
+// Server timestamps (<time class="local-time" datetime="…UTC…">) in the viewer's
+// local time, also in fragments htmx loads later (dashboard events, status)
+function localizeTimes(root) {
+  const pad = n => String(n).padStart(2, '0');
+  (root || document).querySelectorAll('time.local-time[datetime]').forEach(el => {
+    const d = new Date(el.getAttribute('datetime'));
+    if (isNaN(d)) return;
+    el.textContent = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+                     `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    el.title = d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  });
+}
+localizeTimes();
+document.addEventListener('htmx:afterSettle', () => localizeTimes());

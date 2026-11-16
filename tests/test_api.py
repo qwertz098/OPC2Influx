@@ -91,3 +91,14 @@ async def test_delete_all_dynamic_and_manual(async_client):
     assert resp.status_code == 303
     resp = await async_client.get("/subscriptions")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_event_times_are_marked_for_local_display(async_client):
+    """Event timestamps go out as <time datetime=…UTC…> so the browser shows local time."""
+    import app.main as main_mod
+    main_mod.app.state.runtime.add_alarm("info", "test", "hello")
+    resp = await async_client.get("/dashboard/alarms")
+    assert resp.status_code == 200
+    assert '<time class="local-time" datetime="' in resp.text and '+00:00">' in resp.text
+    assert " UTC</time>" in resp.text
