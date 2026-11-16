@@ -183,6 +183,20 @@ class ModbusManager:
         """'unit/area/address' → last error, for the register page."""
         return dict(self._bad.get(server_id, {}))
 
+    async def read_raw(self, srv: ServerConfig, unit: int, function: int, address: int, count: int) -> list:
+        """One read over the running connection, or a short-lived one if the
+        server is disabled / not connected (register editor preview)."""
+        client = self._clients.get(srv.id)
+        if client is not None and client.connected:
+            return await client.read(unit, function, address, count)
+        host, port = parse_endpoint(srv.endpoint_url)
+        tmp = ModbusTcpClient(host, port, timeout=max(0.2, srv.modbus.timeout_ms / 1000))
+        try:
+            await tmp.connect()
+            return await tmp.read(unit, function, address, count)
+        finally:
+            await tmp.close()
+
     async def read_node_value(self, server_id: str, node_id: str) -> Any:
         return (await self.read_node_values(server_id, [node_id]))[0]
 

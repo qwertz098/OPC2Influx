@@ -270,3 +270,42 @@ async def test_register_routes(async_client, tmp_config_dir):
     assert r.json()["connected"] is False and set(r.json()["registers"]) == {s["id"] for s in subs}
     servers_page = await c.get("/config/servers")
     assert "Registers (4/4)" in servers_page.text
+
+
+@pytest.mark.asyncio
+async def test_preview_and_bits(async_client, tmp_config_dir):
+    import yaml
+    from app.modbus.codec import interpretations
+    bank = RegisterBank()
+    bank.set_words("holding", 0, [0b1000_0000_0000_0101])
+    bank.set_words("holding", 1, encode(21.5, "float32", "CDAB"))
+    server = ModbusTcpServer(bank, port=0)
+    await server.start()
+    try:
+        c = async_client
+        r = await c.post("/config/servers", data={"protocol": "modbus", "display_name": "Dev",
+                                                   "mb_host": "127.0.0.1", "mb_port": str(server.port)},
+                         follow_redirects=False)
+        base = r.headers["location"]
+        r = await c.post(base + "/test", json={"area": "holding", "address": "0", "type": "uint16", "scale": "0,5"})
+        d = r.json()
+        assert d["value"] == 0x8005 * 0.5 and d["unscaled"] == 0x8005 and d["raw"] == [0x8005]
+        assert d["bits"][:4] == [1, 0, 1, 0] and d["bits"][15] == 1 and len(d["extra"]) == 3
+        r = await c.post(base + "/test", json={"area": "holding", "address": "1", "type": "uint16"})
+        assert ["float32 CDAB", 21.5] in r.json()["types"]      # what the next registers would be
+        r = await c.post(base + "/test", json={"area": "holding", "address": "0", "type": "uint16", "bit": "2"})
+        assert r.json()["value"] is True
+        r = await c.post(base + "/test", json={"area": "coil", "address": "0"})
+        assert r.json()["value"] is False and "bits" not in r.json()
+
+        r = await c.post(base + "/bits", json={"name": "Status", "area": "holding", "address": "0", "bits": [0, 2, 15],
+                                                "interval_ms": "1000"})
+        assert r.json() == {"added": 3, "errors": []}
+        r = await c.post(base + "/bits", json={"name": "Status", "area": "holding", "address": "0", "bits": [2]})
+        assert r.json()["added"] == 0 and "already configured" in r.json()["errors"][0]
+        subs = yaml.safe_load((tmp_config_dir / "subscriptions.yaml").read_text())["subscriptions"]
+        assert sorted((s["display_name"], s["node_id"]) for s in subs) == [
+            ("Status.bit0", "hr0.0"), ("Status.bit15", "hr0.15"), ("Status.bit2", "hr0.2")]
+    finally:
+        await server.stop()
+    assert ("float32 CDAB", 21.5) in interpretations(encode(21.5, "float32", "CDAB"))

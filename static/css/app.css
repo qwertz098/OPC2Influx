@@ -469,3 +469,20 @@ tr[id^="edit-"]:empty { display: none; }
 .mb-table td.num, .mb-table th.num { text-align: right; }
 .mb-table td { vertical-align: middle; }
 #mbEditor [hidden], #addServerForm [hidden] { display: none !important; }
+.mb-preview { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2, color-mix(in srgb, var(--border) 18%, transparent)); }
+.mb-preview-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.mb-prev-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.mb-prev-value { font-size: 16px; }
+.mb-bits { display: flex; gap: 3px; margin: 8px 0 4px; flex-wrap: wrap; }
+.mb-bit { width: 34px; border: 1px solid var(--border); border-radius: 5px; text-align: center; cursor: pointer; padding: 2px 0; background: var(--surface, #fff); user-select: none; }
+.mb-bit:nth-child(8) { margin-right: 8px; }
+.mb-bit.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); }
+.mb-bit.cur { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mb-bit-n { display: block; font-size: 10px; color: var(--muted); }
+.mb-bit-v { display: block; font-family: var(--mono, monospace); font-weight: 600; }
+.mb-bit-sel { margin: 2px 0 0; }
+.mb-bits-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mb-types { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; }
+.mb-type { border: 1px solid var(--border); border-radius: 5px; background: var(--surface, #fff); padding: 1px 6px; font-size: 12px; cursor: pointer; color: inherit; }
+.mb-type b { font-weight: 600; }
+.mb-type.cur { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }

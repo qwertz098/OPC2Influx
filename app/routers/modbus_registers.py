@@ -44,7 +44,8 @@ async def _apply(state: RuntimeState) -> None:
 def _point(data: dict) -> ModbusPointConfig:
     """ModbusPointConfig from form / JSON / CSV fields (raises ValueError)."""
     def num(name, cast, default=None):
-        v = str(data.get(name, "") or "").strip()
+        v = data.get(name)
+        v = "" if v is None else str(v).strip()      # 0 is a value, not empty
         if cast is float:
             v = v.replace(",", ".")             # 0,1 from a German spreadsheet
         if v == "":
@@ -170,23 +171,61 @@ async def test_read(server_id: str, request: Request, state: RuntimeState = Depe
         mp = _point(await request.json())
     except (ValueError, TypeError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    from app.modbus.client import ModbusError, ModbusTcpClient, parse_endpoint
-    from app.modbus.codec import point_value
-    from app.modbus.manager import make_point
+    from app.modbus.client import ModbusError
+    from app.modbus.codec import decode, interpretations, point_value
+    from app.modbus.manager import ModbusManager, make_point
     p = make_point(srv, mp)
-    host, port = parse_endpoint(srv.endpoint_url)
-    client = ModbusTcpClient(host, port, timeout=max(0.2, srv.modbus.timeout_ms / 1000))
+    mgr = state.opcua_manager.modbus if state.opcua_manager else ModbusManager(state)
+    fc = AREAS[p.area][0]
     try:
-        await client.connect()
-        data = await client.read(p.unit, AREAS[p.area][0], p.address, p.count)
-        raw = [int(x) for x in data]
-        return {"value": point_value(p, p.address, data), "raw": raw, "node_id": mp.node_id()}
+        bits = AREAS[p.area][1]
+        data = None
+        if not bits and p.count < 4:              # a few registers more for the type preview
+            try:
+                data = await mgr.read_raw(srv, p.unit, fc, p.address, 4)
+            except ModbusError:
+                data = None
+        if data is None:
+            data = await mgr.read_raw(srv, p.unit, fc, p.address, p.count)
+        out = {"node_id": mp.node_id(), "value": point_value(p, p.address, data)}
+        if bits:
+            out["raw"] = [int(data[0])]
+        else:
+            words = [int(x) for x in data]
+            out["raw"] = words[:p.count]
+            out["extra"] = words[p.count:]
+            out["unscaled"] = decode(words[:p.count], p.data_type, p.order, p.bit)
+            out["bits"] = [(words[0] >> b) & 1 for b in range(16)]
+            out["types"] = interpretations(words)
+        return out
     except ModbusError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     except Exception as exc:
-        return JSONResponse({"error": str(exc) or f"no connection to {host}:{port}"}, status_code=400)
-    finally:
-        await client.close()
+        return JSONResponse({"error": str(exc) or "no connection"}, status_code=400)
+
+
+@router.post("/bits")
+async def add_bits(server_id: str, request: Request, state: RuntimeState = Depends(get_state)):
+    """Several bits of one register as separate registers (bool), e.g. a status word."""
+    srv = _server(state, server_id)
+    if srv is None:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    data = await request.json()
+    bits = sorted({int(b) for b in data.get("bits") or [] if 0 <= int(b) <= 15})
+    if not bits:
+        return JSONResponse({"error": "Choose at least one bit"}, status_code=400)
+    names = data.get("names") or {}
+    base = str(data.get("name") or "").strip() or "Bit"
+    added, errors = [], []
+    for b in bits:
+        row = {**data, "type": "uint16", "bit": b, "order": "", "scale": 1, "offset": 0, "measurement": "",
+               "name": str(names.get(str(b)) or "").strip() or f"{base}.bit{b}"}
+        try:
+            added.append(_upsert(state, srv, row).id)
+        except (ValueError, TypeError) as exc:
+            errors.append(f"bit {b}: {exc}")
+    await _apply(state)
+    return {"added": len(added), "errors": errors}
 
 
 @router.post("/{reg_id}/toggle")

@@ -127,11 +127,17 @@
         <input class="input" id="f_measurement" placeholder="= name">
       </div>
     </div>
+    <div class="mb-preview" id="mbPreview">
+      <div class="mb-preview-head">
+        <label class="checkbox-label"><input type="checkbox" id="mbLive" checked onchange="mbLiveTick()"> <strong>Live preview</strong></label>
+        <span class="text-xs text-muted">reads the register every second with the settings above</span>
+      </div>
+      <div id="mbPrevBody" class="text-sm"></div>
+    </div>
     <div class="form-actions form-actions--edit">
-      <button type="button" class="btn btn-tool btn-xs" onclick="mbTest()" style="margin-right:8px">Test read</button>
       <span id="mbEditorMsg" class="text-sm mono" style="margin-right:auto"></span>
       <button type="button" class="btn btn-primary btn-xs" onclick="mbSave()">Save</button>
-      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbEditor').hidden = true">Cancel</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbEditor').hidden = true; clearTimeout(mbLiveTimer)">Cancel</button>
     </div>
     <p class="text-xs text-muted" style="margin:8px 0 0">Addresses are 0-based protocol addresses: holding register 40001 and
       input register 30001 are address 0, coil 00001 is coil 0. Registers that are close together are read in one request.
@@ -203,8 +209,11 @@ function mbEdit(id) {
   $('f_interval').value = String(r ? r.interval_ms : {{ srv.polling_defaults.interval_ms }});
   $('f_measurement').value = r && r.measurement !== r.name ? r.measurement : '';
   $('mbEditorMsg').textContent = '';
+  $('mbPrevBody').innerHTML = '';
+  mbBitSel = new Set();
   mbAreaUi();
   const ed = $('mbEditor'); ed.hidden = false;
+  mbLiveTick();
   ed.scrollIntoView({behavior: 'smooth', block: 'start'});
   $('f_name').focus();
 }
@@ -217,14 +226,83 @@ function mbForm() {
     unit_id: $('f_unit').value, interval_ms: $('f_interval').value, measurement: $('f_measurement').value.trim()};
 }
 function mbEditorMsg(text, bad) { const m = $('mbEditorMsg'); m.textContent = text; m.style.color = bad ? 'var(--bad)' : ''; }
-async function mbTest() {
-  mbEditorMsg('Reading…');
-  const r = await fetch(`${MB_URL}/test`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(mbForm())});
+// Live preview: raw words, value before / after scaling, the 16 bits, other types
+let mbLiveTimer = null, mbLiveBusy = false, mbBitSel = new Set();
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const fmtV = v => typeof v === 'number' && !Number.isInteger(v) ? +v.toPrecision(7) : (v === true ? 'true' : v === false ? 'false' : v);
+async function mbLiveTick() {
+  clearTimeout(mbLiveTimer);
+  if ($('mbEditor').hidden || !$('mbLive').checked) { if (!$('mbLive').checked) $('mbPrevBody').innerHTML = ''; return; }
+  if (!mbLiveBusy && $('f_address').value !== '') {
+    mbLiveBusy = true;
+    try {
+      const r = await fetch(`${MB_URL}/test`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(mbForm())});
+      const d = await r.json();
+      mbRenderPreview(r.ok ? d : {error: d.error});
+    } catch (e) { mbRenderPreview({error: 'no answer'}); }
+    mbLiveBusy = false;
+  }
+  mbLiveTimer = setTimeout(mbLiveTick, 1000);
+}
+function mbRenderPreview(d) {
+  const body = $('mbPrevBody');
+  if (d.error) { body.innerHTML = `<div style="color:var(--bad)">${esc(d.error)}</div>`; return; }
+  const f = mbForm(), scaledOn = d.unscaled !== undefined && (Number(f.scale) !== 1 || Number(f.offset) !== 0);
+  let h = '<div class="mb-prev-line">';
+  h += `<span class="text-muted">Raw</span> <span class="mono">${d.raw.map(w => d.bits ? '0x' + w.toString(16).toUpperCase().padStart(4, '0') : w).join(' ')}</span>`;
+  if (d.bits) h += ` <span class="text-muted mono">(${d.raw.join(' ')})</span>`;
+  if (scaledOn) h += ` <span class="text-muted">→ ${esc(f.type === 'bool' || f.bit !== '' ? 'bit' : f.type)}</span> <span class="mono">${esc(fmtV(d.unscaled))}</span>
+       <span class="text-muted">× ${esc(f.scale)} ${Number(f.offset) ? (Number(f.offset) > 0 ? '+ ' : '− ') + esc(Math.abs(Number(f.offset))) : ''} =</span>`;
+  else h += ' <span class="text-muted">→</span>';
+  h += ` <strong class="mono mb-prev-value">${esc(fmtV(d.value))}</strong> <span class="text-xs text-muted mono">${esc(d.node_id)}</span></div>`;
+  if (d.bits) {
+    h += '<div class="mb-bits" title="Bits of the first register. Click a bit to read it alone; tick several to add them as registers.">';
+    for (let b = 15; b >= 0; b--) {
+      const cur = f.bit !== '' && Number(f.bit) === b;
+      h += `<div class="mb-bit ${d.bits[b] ? 'on' : ''} ${cur ? 'cur' : ''}" onclick="mbPickBit(${b}, event)">
+              <span class="mb-bit-n">${b}</span><span class="mb-bit-v">${d.bits[b]}</span>
+              <input type="checkbox" class="mb-bit-sel" ${mbBitSel.has(b) ? 'checked' : ''} onclick="event.stopPropagation(); mbSelBit(${b}, this.checked)" title="Add as register"></div>`;
+    }
+    h += `</div><div class="mb-bits-actions"><button type="button" class="btn btn-tool btn-xs" onclick="mbAddBits()" ${mbBitSel.size ? '' : 'disabled'}>
+            Add ${mbBitSel.size || ''} selected bit${mbBitSel.size === 1 ? '' : 's'} as registers</button>
+          <span class="text-xs text-muted">Names: “${esc(f.name || 'Name')}.bit3”, renamed later with Edit.</span></div>`;
+  }
+  if (d.types && d.types.length) {
+    h += '<div class="mb-types"><span class="text-xs text-muted">Read as</span> ' + d.types.map(([t, v]) =>
+      `<button type="button" class="mb-type ${t === mbTypeLabel(f) ? 'cur' : ''}" onclick="mbPickType('${t}')"><span>${esc(t)}</span> <b class="mono">${esc(fmtV(v))}</b></button>`).join('') + '</div>';
+  }
+  body.innerHTML = h;
+}
+function mbTypeLabel(f) {
+  if (f.bit !== '' || f.type === 'bool') return '';
+  const n = {uint16: 1, int16: 1}[f.type] ? 1 : 2, order = f.order || '{{ srv.modbus.order }}';
+  if (n === 1) return order === 'BADC' || order === 'DCBA' ? f.type + ' BADC' : f.type;
+  return f.type + ' ' + order;
+}
+function mbPickType(label) {
+  const [t, o] = label.split(' ');
+  $('f_type').value = t;
+  $('f_order').value = o && o !== '{{ srv.modbus.order }}' ? o : '';
+  mbAreaUi(); mbLiveTick();
+}
+function mbPickBit(b, ev) {
+  if (ev.target.classList.contains('mb-bit-sel')) return;
+  $('f_type').value = 'bit'; $('f_bit').value = b;
+  mbAreaUi(); mbLiveTick();
+}
+function mbSelBit(b, on) { on ? mbBitSel.add(b) : mbBitSel.delete(b); mbLiveTick(); }
+async function mbAddBits() {
+  const f = mbForm();
+  if (!f.name) { mbEditorMsg('Enter a name first: the bits are called Name.bitN', true); return; }
+  const r = await fetch(`${MB_URL}/bits`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({...f, id: null, bits: [...mbBitSel]})});
   const d = await r.json();
   if (!r.ok) { mbEditorMsg(d.error, true); return; }
-  const v = typeof d.value === 'number' && !Number.isInteger(d.value) ? +d.value.toPrecision(7) : d.value;
-  mbEditorMsg(`${d.node_id} = ${v}   (raw ${d.raw.join(' ')})`);
+  try { sessionStorage.setItem('mb_import', `${d.added} bit registers added` + (d.errors.length ? ` · skipped: ${d.errors.join('; ')}` : '')); } catch {}
+  location.reload();
 }
+['f_area', 'f_address', 'f_type', 'f_bit', 'f_order', 'f_scale', 'f_offset', 'f_unit'].forEach(id =>
+  $(id).addEventListener('change', () => mbLiveTick()));
 async function mbSave() {
   const f = mbForm();
   if (!f.name) { mbEditorMsg('Enter a name', true); return; }

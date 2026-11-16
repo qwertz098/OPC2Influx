@@ -141,3 +141,20 @@ def point_value(p: Point, block_start: int, data: list) -> Any:
     if AREAS[p.area][1]:
         return bool(data[k])
     return scaled(decode(data[k:k + p.count], p.data_type, p.order, p.bit), p.scale, p.offset)
+
+
+def interpretations(words: list[int]) -> list[tuple[str, object]]:
+    """The first registers read as each type and order, to find the right one."""
+    out: list[tuple[str, object]] = []
+    for dtype in ("uint16", "int16", "uint32", "int32", "float32", "float64"):
+        n = TYPES[dtype][0]
+        if len(words) < n:
+            continue
+        for order in (("ABCD", "BADC") if n == 1 else ORDERS):
+            v = decode(words[:n], dtype, order)
+            if isinstance(v, float):
+                if not math.isfinite(v) or (v != 0 and not 1e-6 < abs(v) < 1e12):
+                    continue                     # implausible: a wrong type / order
+                v = float(f"{v:.7g}")
+            out.append((f"{dtype} {order}" if n > 1 or order != "ABCD" else dtype, v))
+    return out
