@@ -128,6 +128,17 @@ def test_alarm_signal_listed_once(state):
     assert RC.AlarmRuleChecker.history_signals(rule) == [("t", ""), ("p", "bar")]
 
 
+def test_render_large_history_csv_only():
+    from app.references.store import RefValue
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [(t0 + timedelta(seconds=i), float(i - 60), [RefValue("t", "Temp", "", float(i))]) for i in range(121)]
+    text, html, csv_text = render(rows, "Alarm")
+    assert "<table" not in html and "121 rows × 1 signals" in text and "attached CSV" in html
+    assert len(csv_text.strip().splitlines()) == 122
+    text, html, _ = render(rows[:100], "Alarm")
+    assert "<table" in html
+
+
 def test_render_empty():
     text, html, csv_text = render([], "x")
     assert text == "x" and csv_text == ""

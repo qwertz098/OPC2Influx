@@ -13,6 +13,10 @@ from app.references.store import RefValue
 
 Row = tuple[datetime, float, list[RefValue]]      # time, offset to the alarm (s), values
 
+# Larger histories go only as CSV file: a long or wide table is unreadable in a mail
+MAX_TABLE_ROWS = 100
+MAX_TABLE_SIGNALS = 12
+
 
 def _fmt(v) -> str:
     if v is None:
@@ -53,6 +57,12 @@ def render(rows: list[Row], title: str) -> tuple[str, str, str]:
         w.writerow([_local(ts), ts.strftime("%Y-%m-%dT%H:%M:%SZ"), _offset(off),
                     *[_fmt(v.value) for v in values], _quality(values)])
     csv_text = buf.getvalue()
+
+    if len(rows) > MAX_TABLE_ROWS or len(heads) > MAX_TABLE_SIGNALS:
+        note = (f"{len(rows)} rows × {len(heads)} signals: too many values for a table in the mail, "
+                f"see the attached CSV file (at most {MAX_TABLE_ROWS} rows and {MAX_TABLE_SIGNALS} signals "
+                f"are shown as a table).")
+        return f"{title}\n\n{note}\n", f"<p>{escape(title)}</p><p style=\"color:#666\">{escape(note)}</p>", csv_text
 
     # Plain text: aligned columns
     table = [[f"Time ({tz})", "Offset (s)", *heads]] + [
