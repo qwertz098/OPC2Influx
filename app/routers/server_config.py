@@ -4,9 +4,37 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.config import ServerConfig, ServerAuth, ServerStaticTag, save_servers
+from app.config import ModbusServerSettings, ServerConfig, ServerAuth, ServerStaticTag, save_servers
 from app.dependencies import get_state
 from app.state import RuntimeState
+
+def _int(form, name: str, default: int, lo: int, hi: int) -> int:
+    try:
+        return max(lo, min(hi, int(form.get(name) or default)))
+    except ValueError:
+        return default
+
+
+def _modbus_settings(form, old: ModbusServerSettings | None = None) -> tuple[str, ModbusServerSettings]:
+    """(endpoint_url, settings) from the Modbus fields of the server form."""
+    old = old or ModbusServerSettings()
+    from app.modbus.client import parse_endpoint
+    text = (form.get("mb_host") or "").strip()
+    port = _int(form, "mb_port", 502, 1, 65535)
+    host, typed_port = parse_endpoint(text)
+    if typed_port != 502 or text.rstrip("/").endswith(":502"):   # "host:port" typed in the host field
+        port = typed_port
+    if ":" in host:
+        host = f"[{host}]"                                        # IPv6
+    order = form.get("mb_order", old.order)
+    return f"modbus-tcp://{host}:{port}", ModbusServerSettings(
+        unit_id=_int(form, "mb_unit_id", old.unit_id, 0, 255),
+        timeout_ms=_int(form, "mb_timeout_ms", old.timeout_ms, 100, 60000),
+        order=order if order in ("ABCD", "CDAB", "BADC", "DCBA") else old.order,
+        max_registers=_int(form, "mb_max_registers", old.max_registers, 1, 125),
+        max_gap=_int(form, "mb_max_gap", old.max_gap, 0, 100),
+    )
+
 
 router = APIRouter(prefix="/config/servers")
 templates = Jinja2Templates(directory="templates")
@@ -18,12 +46,34 @@ async def list_servers(request: Request, state: RuntimeState = Depends(get_state
         "request": request,
         "servers": state.config.servers.servers,
         "server_status": state.server_status,
+        "register_counts": _register_counts(state),
     })
+
+
+def _register_counts(state: RuntimeState) -> dict[str, tuple[int, int]]:
+    """Modbus server → (active registers, all registers)."""
+    out: dict[str, list[int]] = {}
+    for s in state.config.subscriptions.subscriptions:
+        if s.modbus is not None:
+            c = out.setdefault(s.server_id, [0, 0])
+            c[0] += s.enabled
+            c[1] += 1
+    return {k: (v[0], v[1]) for k, v in out.items()}
 
 
 @router.post("")
 async def add_server(request: Request, state: RuntimeState = Depends(get_state)):
     form = await request.form()
+    if form.get("protocol") == "modbus":
+        url, mb = _modbus_settings(form)
+        srv = ServerConfig(display_name=form.get("display_name", "New Server"), protocol="modbus",
+                           endpoint_url=url, modbus=mb,
+                           reconnect_interval_seconds=_int(form, "reconnect_interval", 10, 1, 3600))
+        state.config.servers.servers.append(srv)
+        save_servers(state.config.servers, state.config_dir)
+        if state.opcua_manager:
+            await state.opcua_manager.reconcile()
+        return RedirectResponse(f"/config/servers/{srv.id}/registers", status_code=303)
     srv = ServerConfig(
         display_name=form.get("display_name", "New Server"),
         endpoint_url=form.get("endpoint_url", "opc.tcp://localhost:4840"),
@@ -69,6 +119,12 @@ async def update_server(
 ):
     form = await request.form()
     for srv in state.config.servers.servers:
+        if srv.id == server_id and srv.protocol == "modbus":
+            srv.display_name = form.get("display_name", srv.display_name)
+            srv.endpoint_url, srv.modbus = _modbus_settings(form, srv.modbus)
+            srv.reconnect_interval_seconds = _int(form, "reconnect_interval", srv.reconnect_interval_seconds, 1, 3600)
+            srv.bool_as_int = form.get("bool_as_int") == "1"
+            break
         if srv.id == server_id:
             srv.display_name = form.get("display_name", srv.display_name)
             srv.endpoint_url = form.get("endpoint_url", srv.endpoint_url)
@@ -236,6 +292,31 @@ async def test_server(
     srv = next((s for s in state.config.servers.servers if s.id == server_id), None)
     if srv is None:
         return HTMLResponse('<span class="badge badge-error">Server not found</span>')
+    if srv.protocol == "modbus":
+        from app.modbus.client import ModbusError, ModbusTcpClient, parse_endpoint
+        host, port = parse_endpoint(srv.endpoint_url)
+        client = ModbusTcpClient(host, port, timeout=max(0.2, srv.modbus.timeout_ms / 1000))
+        try:
+            await client.connect()
+            first = next((s.modbus for s in state.config.subscriptions.subscriptions
+                          if s.server_id == srv.id and s.modbus and s.enabled), None)
+            msg = f"Connected to {host}:{port}"
+            if first is not None:
+                from app.modbus.codec import AREAS
+                from app.modbus.manager import make_point
+                p = make_point(srv, first)
+                try:
+                    await client.read(p.unit, AREAS[p.area][0], p.address, p.count)
+                    msg += f", read {first.node_id()} OK"
+                except ModbusError as exc:
+                    msg += f", but reading {first.node_id()}: {exc}"
+            result = "ok"
+        except Exception as exc:
+            result, msg = "error", str(exc) or f"no connection to {host}:{port}"
+        finally:
+            await client.close()
+        return templates.TemplateResponse(request, "partials/test_result.html", {
+            "request": request, "result": result, "message": msg})
 
     try:
         client = Client(url=srv.endpoint_url, timeout=5)

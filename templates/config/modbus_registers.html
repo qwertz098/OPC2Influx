@@ -1,0 +1,430 @@
+{% extends "base.html" %}
+{% block title %}Opc2Influx{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Registers · {{ srv.display_name }}</h1>
+  <span class="badge {% if status and status.connected %}badge-ok{% else %}badge-error{% endif %}" id="mbConn">
+    {{ 'Connected' if (status and status.connected) else 'Disconnected' }}</span>
+  <span class="mono text-sm text-muted">{{ srv.endpoint_url }} · unit {{ srv.modbus.unit_id }} · {{ srv.modbus.order }}</span>
+  <a class="btn btn-ghost btn-sm" href="/config/servers" style="margin-left:auto">← Servers</a>
+</div>
+<div id="mbConnError" class="text-sm" style="color:var(--bad);margin:-6px 0 8px">{% if status and status.last_error and not status.connected %}{{ status.last_error }}{% endif %}</div>
+
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <input class="input input-sm" id="mbFilter" placeholder="Filter: name, register, type…" style="max-width:240px"
+           oninput="mbFilter()">
+    <span class="text-sm text-muted" id="mbCount"></span>
+    <span class="actions" style="margin-left:auto">
+      <button type="button" class="btn btn-tool btn-xs" onclick="mbAll(true)" title="Read all (shown) registers">Alle an</button>
+      <button type="button" class="btn btn-tool btn-xs" onclick="mbAll(false)" title="Read none of the (shown) registers">Alle ab</button>
+      <a class="btn btn-ghost btn-xs" href="/config/servers/{{ srv.id }}/registers/export.csv">Export CSV</a>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbImport').click()">Import CSV</button>
+      <button type="button" class="btn btn-tool btn-xs" onclick="mbPasteOpen()" title="Paste a register table, e.g. from an AI or a spreadsheet">Paste list</button>
+      <input type="file" id="mbImport" accept=".csv,text/csv" hidden onchange="mbImportCsv(this)">
+      <button type="button" class="btn btn-primary btn-xs" onclick="mbEdit(null)">+ Register</button>
+    </span>
+  </div>
+  <div class="card-body" style="padding:0">
+    <div id="mbMsg" class="text-sm" style="padding:6px 16px" hidden></div>
+    <div style="overflow-x:auto">
+    <table class="table fit-table mb-table">
+      <thead><tr>
+        <th title="Read this register">On</th><th>Name</th><th>Register</th><th>Type</th>
+        <th class="num">Scale / offset</th><th class="num">Unit</th><th class="num">Interval</th>
+        <th class="num">Value</th><th></th>
+      </tr></thead>
+      <tbody id="mbRows">
+        {% for r in regs %}{% set m = r.modbus %}
+        <tr data-id="{{ r.id }}" data-text="{{ (r.display_name ~ ' ' ~ r.node_id ~ ' ' ~ areas[m.area][2] ~ ' ' ~ (('bit ' ~ m.bit) if m.bit is not none else m.data_type)) | lower }}"
+            class="{% if not r.enabled %}opacity-50{% endif %}">
+          <td><input type="checkbox" class="mb-on" {% if r.enabled %}checked{% endif %} onchange="mbToggle(this)"></td>
+          <td class="ellipsis" style="max-width:260px" title="{{ r.display_name }}{% if r.influxdb.measurement != r.display_name %}&#10;measurement {{ r.influxdb.measurement }}{% endif %}">{{ r.display_name }}</td>
+          <td class="mono text-sm" title="{{ areas[m.area][2] }} {{ m.address }} (0-based)">{{ r.node_id.split(':')[0].split('*')[0].split('@')[0] }}</td>
+          <td class="mono text-sm">{% if m.bit is not none %}bit {{ m.bit }}{% else %}{{ m.data_type }}{% endif %}{% if m.order and m.bit is none and m.data_type != 'bool' %} <span class="text-muted">{{ m.order }}</span>{% endif %}</td>
+          <td class="num mono text-sm">{% if m.scale != 1 or m.offset != 0 %}×{{ '%g' % m.scale }}{% if m.offset %} {{ '%+g' % m.offset }}{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="num mono text-sm">{{ m.unit_id if m.unit_id is not none else '' }}</td>
+          <td class="num text-sm">{{ (r.polling.interval_ms / 1000) | round(1) | string | replace('.0', '') }} s</td>
+          <td class="num mono text-sm mb-val"><span class="text-muted">—</span></td>
+          <td><div class="actions">
+            <button type="button" class="btn btn-ghost btn-xs" onclick="mbEdit('{{ r.id }}')">Edit</button>
+            <form action="/config/servers/{{ srv.id }}/registers/{{ r.id }}/delete" method="post" style="display:inline"
+                  onsubmit="return confirm('Delete register {{ r.display_name | e }}?')">
+              <button class="btn btn-danger btn-xs">Delete</button>
+            </form>
+          </div></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-muted text-sm" style="text-align:center;padding:16px">
+          No registers yet: add one with <strong>+ Register</strong> or import a CSV file.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3" id="mbPaste" hidden>
+  <div class="card-header" style="display:flex;align-items:center;gap:8px">
+    <span>Paste register list</span>
+    <button type="button" class="btn btn-tool btn-xs" style="margin-left:auto" onclick="mbCopyPrompt(this)"
+            title="Copies an instruction for ChatGPT, Claude … : paste it together with the device's Modbus documentation">Copy AI prompt</button>
+  </div>
+  <div class="card-body">
+    <p class="text-sm text-muted" style="margin:0 0 8px"><strong>Copy AI prompt</strong>, paste it together with the
+      device's Modbus documentation into an AI (ChatGPT, Claude, …) and paste its answer here. Format: a table with the
+      columns <code>name | area | address | type | order | bit | scale | offset | unit_id</code> (the prompt explains them).
+      The preview shows what will be added or updated before you import.</p>
+    <textarea class="input mono" id="mbPasteText" rows="10" style="width:100%;max-width:none;font-size:12px"
+              placeholder="| name | area | address | type | scale |&#10;|---|---|---|---|---|&#10;| Boiler.Temperature | holding | 40001 | INT | 0.1 |"
+              oninput="mbPastePreviewSoon()"></textarea>
+    <label class="checkbox-label" style="margin:6px 0" title="Off: all addresses are 0-based protocol addresses as written">
+      <input type="checkbox" id="mbModicon" checked onchange="mbPastePreview()">
+      5/6-digit addresses such as 40001, 30001, 10001, 00001 are Modicon numbers (area + address + 1)</label>
+    <div id="mbPasteResult"></div>
+    <div class="form-actions form-actions--edit">
+      <span id="mbPasteMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" id="mbPasteBtn" onclick="mbPasteImport()" disabled>Import</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbPaste').hidden = true">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3" id="mbEditor" hidden>
+  <div class="card-header" id="mbEditorTitle">New register</div>
+  <div class="card-body">
+    <div class="form-row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="flex:2;min-width:200px">
+        <label class="form-label">Name</label>
+        <input class="input" id="f_name" placeholder="Boiler.Temperature" maxlength="200">
+      </div>
+      <div class="form-group" style="flex:0 0 170px">
+        <label class="form-label">Area</label>
+        <select class="select" id="f_area" onchange="mbAreaUi()">
+          {% for a, info in areas.items() %}<option value="{{ a }}" {% if a == 'holding' %}selected{% endif %}>{{ info[2] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex:0 0 110px">
+        <label class="form-label" title="Protocol address, 0-based. Holding register 40001 = 0, input register 30001 = 0.">Address</label>
+        <input class="input" id="f_address" type="number" min="0" max="65535" value="0">
+      </div>
+      <div class="form-group reg-only" style="flex:0 0 120px">
+        <label class="form-label">Type</label>
+        <select class="select" id="f_type" onchange="mbAreaUi()">
+          {% for t in types if t != 'bool' %}<option value="{{ t }}" {% if t == 'uint16' %}selected{% endif %}>{{ t }}</option>{% endfor %}
+          <option value="bit">bit (bool)</option>
+        </select>
+      </div>
+      <div class="form-group bit-only" style="flex:0 0 80px">
+        <label class="form-label">Bit</label>
+        <input class="input" id="f_bit" type="number" min="0" max="15" value="0">
+      </div>
+      <div class="form-group reg-only multi-only" style="flex:0 0 170px">
+        <label class="form-label" title="Empty: the server's order ({{ srv.modbus.order }})">Order</label>
+        <select class="select" id="f_order">
+          <option value="">Server ({{ srv.modbus.order }})</option>
+          {% for o in ['ABCD','CDAB','BADC','DCBA'] %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group reg-only num-only" style="flex:0 0 110px">
+        <label class="form-label" title="value = raw × scale + offset">Scale</label>
+        <input class="input" id="f_scale" type="text" inputmode="decimal" value="1">
+      </div>
+      <div class="form-group reg-only num-only" style="flex:0 0 110px">
+        <label class="form-label">Offset</label>
+        <input class="input" id="f_offset" type="text" inputmode="decimal" value="0">
+      </div>
+      <div class="form-group" style="flex:0 0 110px">
+        <label class="form-label" title="Empty: the server's unit id ({{ srv.modbus.unit_id }})">Unit ID</label>
+        <input class="input" id="f_unit" type="number" min="0" max="255" placeholder="{{ srv.modbus.unit_id }}">
+      </div>
+      <div class="form-group" style="flex:0 0 120px">
+        <label class="form-label">Interval</label>
+        <select class="select" id="f_interval">
+          {% for ms, lbl in [(100,"100 ms"),(500,"500 ms"),(1000,"1 s"),(5000,"5 s"),(10000,"10 s"),(60000,"1 min"),(300000,"5 min"),(600000,"10 min")] %}
+          <option value="{{ ms }}" {% if ms == srv.polling_defaults.interval_ms %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex:2;min-width:180px">
+        <label class="form-label" title="InfluxDB measurement; empty = the name">Measurement <span class="text-muted text-xs">(optional)</span></label>
+        <input class="input" id="f_measurement" placeholder="= name">
+      </div>
+    </div>
+    <div class="mb-preview" id="mbPreview">
+      <div class="mb-preview-head">
+        <label class="checkbox-label"><input type="checkbox" id="mbLive" checked onchange="mbLiveTick()"> <strong>Live preview</strong></label>
+        <span class="text-xs text-muted">reads the register every second with the settings above</span>
+      </div>
+      <div id="mbPrevBody" class="text-sm"></div>
+    </div>
+    <div class="form-actions form-actions--edit">
+      <span id="mbEditorMsg" class="text-sm mono" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" onclick="mbSave()">Save</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbEditor').hidden = true; clearTimeout(mbLiveTimer)">Cancel</button>
+    </div>
+    <p class="text-xs text-muted" style="margin:8px 0 0">Addresses are 0-based protocol addresses: holding register 40001 and
+      input register 30001 are address 0, coil 00001 is coil 0. Registers that are close together are read in one request.
+      Values go to InfluxDB / SQLite like OPC UA subscriptions and can be used in alarms, charts, reports and reference tables.</p>
+  </div>
+</div>
+
+<script>
+const MB_URL = '/config/servers/{{ srv.id }}/registers';
+const MB_REGS = {{ regs_json | tojson }};
+let mbEditId = null;
+const $ = id => document.getElementById(id);
+
+function mbShowMsg(text, bad) {
+  const m = $('mbMsg'); m.hidden = !text; m.textContent = text || ''; m.style.color = bad ? 'var(--bad)' : '';
+}
+function mbVisible() { return [...document.querySelectorAll('#mbRows tr[data-id]')].filter(tr => !tr.hidden); }
+function mbCount() {
+  const rows = [...document.querySelectorAll('#mbRows tr[data-id]')], vis = mbVisible();
+  const on = rows.filter(tr => tr.querySelector('.mb-on').checked).length;
+  $('mbCount').textContent = rows.length ? `${on} of ${rows.length} on` + (vis.length < rows.length ? ` · ${vis.length} shown` : '') : '';
+}
+function mbFilter() {
+  const q = $('mbFilter').value.trim().toLowerCase();
+  document.querySelectorAll('#mbRows tr[data-id]').forEach(tr => { tr.hidden = q && !tr.dataset.text.includes(q); });
+  mbCount();
+}
+async function mbToggle(cb) {
+  const tr = cb.closest('tr');
+  const r = await fetch(`${MB_URL}/${tr.dataset.id}/toggle`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                              body: JSON.stringify({enabled: cb.checked})});
+  if (!r.ok) { cb.checked = !cb.checked; mbShowMsg('Saving failed', true); return; }
+  tr.classList.toggle('opacity-50', !cb.checked);
+  mbCount();
+}
+async function mbAll(on) {
+  const vis = mbVisible(), all = document.querySelectorAll('#mbRows tr[data-id]').length;
+  const filtered = vis.length < all;
+  const what = filtered ? `the ${vis.length} shown registers` : `all ${all} registers`;
+  if (!vis.length || !confirm(`${on ? 'Read' : 'Stop reading'} ${what}?`)) return;
+  const r = await fetch(`${MB_URL}/all`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled: on, ids: filtered ? vis.map(tr => tr.dataset.id) : []})});
+  if (!r.ok) { mbShowMsg('Saving failed', true); return; }
+  vis.forEach(tr => { tr.querySelector('.mb-on').checked = on; tr.classList.toggle('opacity-50', !on); });
+  mbCount();
+}
+
+function mbAreaUi() {
+  const bitArea = ['coil', 'discrete'].includes($('f_area').value);
+  const t = $('f_type').value, bit = t === 'bit';
+  document.querySelectorAll('#mbEditor .reg-only').forEach(el => el.hidden = bitArea);
+  document.querySelectorAll('#mbEditor .bit-only').forEach(el => el.hidden = bitArea || !bit);
+  document.querySelectorAll('#mbEditor .num-only').forEach(el => el.hidden = bitArea || bit);
+  document.querySelectorAll('#mbEditor .multi-only').forEach(el => el.hidden = bitArea || bit);
+}
+function mbEdit(id) {
+  const r = MB_REGS.find(x => x.id === id);
+  mbEditId = r ? r.id : null;
+  $('mbEditorTitle').textContent = r ? 'Edit register ' + r.name : 'New register';
+  $('f_name').value = r ? r.name : '';
+  $('f_area').value = r ? r.area : 'holding';
+  $('f_address').value = r ? r.address : '';
+  $('f_type').value = r ? (r.bit !== null ? 'bit' : (r.data_type === 'bool' ? 'uint16' : r.data_type)) : 'uint16';
+  $('f_bit').value = r && r.bit !== null ? r.bit : 0;
+  $('f_order').value = r ? r.order : '';
+  $('f_scale').value = r ? r.scale : 1;
+  $('f_offset').value = r ? r.offset : 0;
+  $('f_unit').value = r && r.unit_id !== null ? r.unit_id : '';
+  $('f_interval').value = String(r ? r.interval_ms : {{ srv.polling_defaults.interval_ms }});
+  $('f_measurement').value = r && r.measurement !== r.name ? r.measurement : '';
+  $('mbEditorMsg').textContent = '';
+  $('mbPrevBody').innerHTML = '';
+  mbBitSel = new Set();
+  mbAreaUi();
+  const ed = $('mbEditor'); ed.hidden = false;
+  mbLiveTick();
+  ed.scrollIntoView({behavior: 'smooth', block: 'start'});
+  $('f_name').focus();
+}
+function mbForm() {
+  const bitArea = ['coil', 'discrete'].includes($('f_area').value), bit = $('f_type').value === 'bit';
+  return {id: mbEditId, name: $('f_name').value.trim(), area: $('f_area').value, address: $('f_address').value,
+    type: bitArea ? 'bool' : (bit ? 'uint16' : $('f_type').value), bit: !bitArea && bit ? $('f_bit').value : '',
+    order: bitArea || bit ? '' : $('f_order').value,
+    scale: bitArea || bit ? 1 : $('f_scale').value, offset: bitArea || bit ? 0 : $('f_offset').value,
+    unit_id: $('f_unit').value, interval_ms: $('f_interval').value, measurement: $('f_measurement').value.trim()};
+}
+function mbEditorMsg(text, bad) { const m = $('mbEditorMsg'); m.textContent = text; m.style.color = bad ? 'var(--bad)' : ''; }
+// Live preview: raw words, value before / after scaling, the 16 bits, other types
+let mbLiveTimer = null, mbLiveBusy = false, mbBitSel = new Set();
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const fmtV = v => typeof v === 'number' && !Number.isInteger(v) ? +v.toPrecision(7) : (v === true ? 'true' : v === false ? 'false' : v);
+async function mbLiveTick() {
+  clearTimeout(mbLiveTimer);
+  if ($('mbEditor').hidden || !$('mbLive').checked) { if (!$('mbLive').checked) $('mbPrevBody').innerHTML = ''; return; }
+  if (!mbLiveBusy && $('f_address').value !== '') {
+    mbLiveBusy = true;
+    try {
+      const r = await fetch(`${MB_URL}/test`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(mbForm())});
+      const d = await r.json();
+      mbRenderPreview(r.ok ? d : {error: d.error});
+    } catch (e) { mbRenderPreview({error: 'no answer'}); }
+    mbLiveBusy = false;
+  }
+  mbLiveTimer = setTimeout(mbLiveTick, 1000);
+}
+function mbRenderPreview(d) {
+  const body = $('mbPrevBody');
+  if (d.error) { body.innerHTML = `<div style="color:var(--bad)">${esc(d.error)}</div>`; return; }
+  const f = mbForm(), scaledOn = d.unscaled !== undefined && (Number(f.scale) !== 1 || Number(f.offset) !== 0);
+  let h = '<div class="mb-prev-line">';
+  h += `<span class="text-muted">Raw</span> <span class="mono">${d.raw.map(w => d.bits ? '0x' + w.toString(16).toUpperCase().padStart(4, '0') : w).join(' ')}</span>`;
+  if (d.bits) h += ` <span class="text-muted mono">(${d.raw.join(' ')})</span>`;
+  if (scaledOn) h += ` <span class="text-muted">→ ${esc(f.type === 'bool' || f.bit !== '' ? 'bit' : f.type)}</span> <span class="mono">${esc(fmtV(d.unscaled))}</span>
+       <span class="text-muted">× ${esc(f.scale)} ${Number(f.offset) ? (Number(f.offset) > 0 ? '+ ' : '− ') + esc(Math.abs(Number(f.offset))) : ''} =</span>`;
+  else h += ' <span class="text-muted">→</span>';
+  h += ` <strong class="mono mb-prev-value">${esc(fmtV(d.value))}</strong> <span class="text-xs text-muted mono">${esc(d.node_id)}</span></div>`;
+  if (d.bits) {
+    h += '<div class="mb-bits" title="Bits of the first register. Click a bit to read it alone; tick several to add them as registers.">';
+    for (let b = 15; b >= 0; b--) {
+      const cur = f.bit !== '' && Number(f.bit) === b;
+      h += `<div class="mb-bit ${d.bits[b] ? 'on' : ''} ${cur ? 'cur' : ''}" onclick="mbPickBit(${b}, event)">
+              <span class="mb-bit-n">${b}</span><span class="mb-bit-v">${d.bits[b]}</span>
+              <input type="checkbox" class="mb-bit-sel" ${mbBitSel.has(b) ? 'checked' : ''} onclick="event.stopPropagation(); mbSelBit(${b}, this.checked)" title="Add as register"></div>`;
+    }
+    h += `</div><div class="mb-bits-actions"><button type="button" class="btn btn-tool btn-xs" onclick="mbAddBits()" ${mbBitSel.size ? '' : 'disabled'}>
+            Add ${mbBitSel.size || ''} selected bit${mbBitSel.size === 1 ? '' : 's'} as registers</button>
+          <span class="text-xs text-muted">Names: “${esc(f.name || 'Name')}.bit3”, renamed later with Edit.</span></div>`;
+  }
+  if (d.types && d.types.length) {
+    h += '<div class="mb-types"><span class="text-xs text-muted">Read as</span> ' + d.types.map(([t, v]) =>
+      `<button type="button" class="mb-type ${t === mbTypeLabel(f) ? 'cur' : ''}" onclick="mbPickType('${t}')"><span>${esc(t)}</span> <b class="mono">${esc(fmtV(v))}</b></button>`).join('') + '</div>';
+  }
+  body.innerHTML = h;
+}
+function mbTypeLabel(f) {
+  if (f.bit !== '' || f.type === 'bool') return '';
+  const n = {uint16: 1, int16: 1}[f.type] ? 1 : 2, order = f.order || '{{ srv.modbus.order }}';
+  if (n === 1) return order === 'BADC' || order === 'DCBA' ? f.type + ' BADC' : f.type;
+  return f.type + ' ' + order;
+}
+function mbPickType(label) {
+  const [t, o] = label.split(' ');
+  $('f_type').value = t;
+  $('f_order').value = o && o !== '{{ srv.modbus.order }}' ? o : '';
+  mbAreaUi(); mbLiveTick();
+}
+function mbPickBit(b, ev) {
+  if (ev.target.classList.contains('mb-bit-sel')) return;
+  $('f_type').value = 'bit'; $('f_bit').value = b;
+  mbAreaUi(); mbLiveTick();
+}
+function mbSelBit(b, on) { on ? mbBitSel.add(b) : mbBitSel.delete(b); mbLiveTick(); }
+async function mbAddBits() {
+  const f = mbForm();
+  if (!f.name) { mbEditorMsg('Enter a name first: the bits are called Name.bitN', true); return; }
+  const r = await fetch(`${MB_URL}/bits`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({...f, id: null, bits: [...mbBitSel]})});
+  const d = await r.json();
+  if (!r.ok) { mbEditorMsg(d.error, true); return; }
+  try { sessionStorage.setItem('mb_import', `${d.added} bit registers added` + (d.errors.length ? ` · skipped: ${d.errors.join('; ')}` : '')); } catch {}
+  location.reload();
+}
+['f_area', 'f_address', 'f_type', 'f_bit', 'f_order', 'f_scale', 'f_offset', 'f_unit'].forEach(id =>
+  $(id).addEventListener('change', () => mbLiveTick()));
+async function mbSave() {
+  const f = mbForm();
+  if (!f.name) { mbEditorMsg('Enter a name', true); return; }
+  const r = await fetch(MB_URL, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(f)});
+  const d = await r.json();
+  if (!r.ok) { mbEditorMsg(d.error || 'Saving failed', true); return; }
+  location.reload();
+}
+// Paste a register list
+let mbPasteTimer = null, mbPasteRows = [];
+function mbPasteOpen() {
+  const c = $('mbPaste'); c.hidden = false; $('mbEditor').hidden = true;
+  c.scrollIntoView({behavior: 'smooth', block: 'start'}); $('mbPasteText').focus();
+}
+async function mbCopyPrompt(btn) {
+  const text = await (await fetch(`${MB_URL}/ai-prompt`)).text();
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Prompt copied ✓'; }
+  catch { $('mbPasteText').value = text; btn.textContent = 'Prompt in the text box (copy it)'; }
+  setTimeout(() => btn.textContent = 'Copy AI prompt', 2500);
+}
+function mbPastePreviewSoon() { clearTimeout(mbPasteTimer); mbPasteTimer = setTimeout(mbPastePreview, 300); }
+async function mbPastePreview() {
+  const text = $('mbPasteText').value;
+  if (!text.trim()) { $('mbPasteResult').innerHTML = ''; $('mbPasteBtn').disabled = true; $('mbPasteMsg').textContent = ''; return; }
+  const r = await fetch(`${MB_URL}/paste/preview`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text, modicon: $('mbModicon').checked})});
+  const d = await r.json();
+  mbPasteRows = d.rows || [];
+  const ok = mbPasteRows.filter(x => x.status !== 'error');
+  if (!mbPasteRows.length) {
+    $('mbPasteResult').innerHTML = '<p class="text-sm" style="color:var(--bad)">No table found: the first line must name the columns (at least name / address).</p>';
+  } else {
+    const typ = f => f ? (f.bit !== undefined ? 'bit ' + f.bit : f.type) + (f.order ? ' ' + f.order : '') : '';
+    const sc = f => f && (f.scale !== undefined || f.offset !== undefined) ? '×' + (f.scale ?? 1) + (f.offset ? ' ' + (f.offset > 0 ? '+' : '') + f.offset : '') : '';
+    $('mbPasteResult').innerHTML = `<div style="max-height:320px;overflow:auto"><table class="table fit-table mb-table">
+      <thead><tr><th>#</th><th></th><th>Name</th><th>Register</th><th>Type</th><th class="num">Scale</th><th>Note</th></tr></thead><tbody>` +
+      mbPasteRows.map(x => `<tr ${x.status === 'error' ? 'style="color:var(--bad)"' : ''}><td class="text-xs text-muted">${x.row}</td>
+        <td><span class="badge ${x.status === 'new' ? 'badge-ok' : x.status === 'update' ? 'badge-mode' : 'badge-error'}">${x.status}</span></td>
+        <td>${esc(x.fields ? x.fields.name : '')}</td><td class="mono text-sm">${esc(x.node_id || '')}</td>
+        <td class="mono text-sm">${esc(typ(x.fields))}</td><td class="num mono text-sm">${esc(sc(x.fields))}</td>
+        <td class="text-xs">${esc(x.error || '')}</td></tr>`).join('') + '</tbody></table></div>';
+  }
+  const nNew = ok.filter(x => x.status === 'new').length, nUpd = ok.length - nNew, nErr = mbPasteRows.length - ok.length;
+  $('mbPasteMsg').textContent = mbPasteRows.length ? `${nNew} new, ${nUpd} update${nErr ? `, ${nErr} with errors (skipped)` : ''}` : '';
+  $('mbPasteBtn').disabled = !ok.length;
+  $('mbPasteBtn').textContent = ok.length ? `Import ${ok.length}` : 'Import';
+}
+async function mbPasteImport() {
+  const r = await fetch(`${MB_URL}/paste`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: $('mbPasteText').value, modicon: $('mbModicon').checked})});
+  const d = await r.json();
+  if (!r.ok) { $('mbPasteMsg').textContent = d.error || 'Import failed'; return; }
+  try { sessionStorage.setItem('mb_import', `Imported: ${d.added} added, ${d.updated} updated` +
+        (d.errors.length ? ` · ${d.errors.length} skipped: ${d.errors.join('; ')}` : '')); } catch {}
+  location.reload();
+}
+async function mbImportCsv(input) {
+  if (!input.files.length) return;
+  const fd = new FormData(); fd.append('file', input.files[0]);
+  mbShowMsg('Importing…');
+  const r = await fetch(`${MB_URL}/import`, {method: 'POST', body: fd});
+  const d = await r.json();
+  input.value = '';
+  if (!r.ok) { mbShowMsg(d.error || 'Import failed', true); return; }
+  try { sessionStorage.setItem('mb_import', `Imported: ${d.added} added, ${d.updated} updated` +
+        (d.errors.length ? ` · ${d.errors.length} skipped: ${d.errors.join('; ')}` : '')); } catch {}
+  location.reload();
+}
+(function () {
+  let t = null; try { t = sessionStorage.getItem('mb_import'); sessionStorage.removeItem('mb_import'); } catch {}
+  if (t) mbShowMsg(t, t.includes('skipped'));
+})();
+
+// Latest values every 2 s
+async function mbRefresh() {
+  try {
+    const r = await fetch(`${MB_URL}/values`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const c = $('mbConn');
+    c.textContent = d.connected ? 'Connected' : 'Disconnected';
+    c.className = 'badge ' + (d.connected ? 'badge-ok' : 'badge-error');
+    $('mbConnError').textContent = d.connected ? '' : (d.error || '');
+    document.querySelectorAll('#mbRows tr[data-id]').forEach(tr => {
+      const v = d.registers[tr.dataset.id], cell = tr.querySelector('.mb-val');
+      if (!v) return;
+      const on = tr.querySelector('.mb-on').checked;
+      if (v.error) { cell.innerHTML = '<span class="text-xs" style="color:var(--bad)"></span>'; cell.firstChild.textContent = v.error.replace(/ for function \d+$/, ''); cell.title = v.error; }
+      else if (v.value === null || v.value === undefined || !on) { cell.innerHTML = '<span class="text-muted">—</span>'; cell.title = on ? '' : 'Off'; }
+      else { cell.textContent = typeof v.value === 'boolean' ? (v.value ? 'true' : 'false') : v.value; cell.title = ''; }
+    });
+  } catch {}
+}
+mbCount();
+mbRefresh();
+setInterval(mbRefresh, 2000);
+</script>
+{% endblock %}

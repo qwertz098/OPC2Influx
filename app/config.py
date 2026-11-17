@@ -109,9 +109,19 @@ class ServerStaticTag(BaseModel):
     value: str
 
 
+class ModbusServerSettings(BaseModel):
+    """Modbus TCP connection (ServerConfig.protocol == "modbus"; endpoint_url = modbus-tcp://host:port)."""
+    unit_id: int = 1                 # default unit / slave id of the registers
+    timeout_ms: int = 2000
+    order: Literal["ABCD", "CDAB", "BADC", "DCBA"] = "ABCD"   # default byte / word order
+    max_registers: int = 125         # per read request (some devices accept fewer)
+    max_gap: int = 10                # unused registers read along to save requests
+
+
 class ServerConfig(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     display_name: str
+    protocol: Literal["opcua", "modbus"] = "opcua"
     endpoint_url: str
     security_mode: Literal["None", "Sign", "SignAndEncrypt"] = "None"
     security_policy: str = "Basic256Sha256"
@@ -123,6 +133,7 @@ class ServerConfig(BaseModel):
     static_tags: list[ServerStaticTag] = []
     bool_as_int: bool = False
     name_strip_prefixes: list[str] = []
+    modbus: ModbusServerSettings = Field(default_factory=ModbusServerSettings)
 
 
 class ServersConfig(BaseModel):
@@ -158,6 +169,33 @@ class SubTagActivation(BaseModel):
     active: bool = True
 
 
+class ModbusPointConfig(BaseModel):
+    """Where a subscription of a Modbus server reads its value."""
+    area: Literal["coil", "discrete", "input", "holding"] = "holding"
+    address: int = 0                 # protocol address, 0-based
+    data_type: Literal["bool", "int16", "uint16", "int32", "uint32", "float32",
+                       "int64", "uint64", "float64"] = "uint16"
+    order: Literal["", "ABCD", "CDAB", "BADC", "DCBA"] = ""    # "" = server default
+    bit: Optional[int] = None        # 0..15: one bit of a register (bool)
+    scale: float = 1.0
+    offset: float = 0.0
+    unit_id: Optional[int] = None    # None = server default
+
+    def node_id(self) -> str:
+        """Unique, readable key of the point (SubscriptionConfig.node_id)."""
+        from app.modbus.codec import AREA_SHORT, AREAS
+        key = f"{AREA_SHORT[self.area]}{self.address}"
+        if not AREAS[self.area][1]:
+            key += f".{self.bit}" if self.bit is not None else f":{self.data_type}"
+            if self.order and self.bit is None:
+                key += f":{self.order}"
+        if self.scale != 1 or self.offset != 0:
+            key += f"*{self.scale:g}" + (f"{self.offset:+g}" if self.offset else "")
+        if self.unit_id is not None:
+            key += f"@{self.unit_id}"
+        return key
+
+
 class SubscriptionConfig(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     server_id: str
@@ -169,6 +207,7 @@ class SubscriptionConfig(BaseModel):
     enabled: bool = True
     active_tags: list[SubTagActivation] = []
     source_folder_id: str = ""   # non-empty = managed by a DynamicFolderConfig
+    modbus: Optional[ModbusPointConfig] = None   # set for subscriptions of a Modbus server
 
 
 class SubscriptionsConfig(BaseModel):
@@ -527,6 +566,48 @@ class ReferenceTablesConfig(BaseModel):
 # Aggregate app config
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Outputs: values published by the app (outputs.yaml)
+# ---------------------------------------------------------------------------
+
+_MB_TYPES = Literal["bool", "int16", "uint16", "int32", "uint32", "float32", "int64", "uint64", "float64"]
+
+
+class OutputPointConfig(BaseModel):
+    """One entry of the app's Modbus register map.
+
+    kind value:    a subscription's latest value, read-only for clients
+    kind alarm:    1 while an alarm rule's condition holds (coil / discrete input)
+    kind received: a register clients write into; optionally recorded
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    kind: Literal["value", "alarm", "received"] = "value"
+    source_id: str = ""              # subscription id (value) or alarm rule id (alarm)
+    name: str = ""                   # received: name / measurement; else optional label
+    enabled: bool = True
+    area: Literal["holding", "input", "coil", "discrete"] = "holding"
+    address: int = 0                 # 0-based
+    data_type: _MB_TYPES = "float32"
+    order: Literal["", "ABCD", "CDAB", "BADC", "DCBA"] = ""    # "" = server order
+    scale: float = 1.0               # register = value × scale (received: value = register / scale)
+    status_address: Optional[int] = None   # discrete input that is 1 while the value is valid
+    record: bool = False             # received: write the values to InfluxDB
+
+
+class ModbusServerOutputConfig(BaseModel):
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = 5020
+    order: Literal["ABCD", "CDAB", "BADC", "DCBA"] = "ABCD"
+    writable: bool = True            # clients may write the "received" registers
+    update_ms: int = 1000
+
+
+class OutputsConfig(BaseModel):
+    modbus_server: ModbusServerOutputConfig = Field(default_factory=ModbusServerOutputConfig)
+    points: list[OutputPointConfig] = []
+
+
 class AppConfig(BaseModel):
     servers: ServersConfig = Field(default_factory=ServersConfig)
     subscriptions: SubscriptionsConfig = Field(default_factory=SubscriptionsConfig)
@@ -541,6 +622,7 @@ class AppConfig(BaseModel):
     app_settings: AppSettingsConfig = Field(default_factory=AppSettingsConfig)
     reports: ReportsConfig = Field(default_factory=ReportsConfig)
     references: ReferenceTablesConfig = Field(default_factory=ReferenceTablesConfig)
+    outputs: OutputsConfig = Field(default_factory=OutputsConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +650,12 @@ def load_config(config_dir: Path) -> AppConfig:
         app_settings=_load_model(AppSettingsConfig, d / "app_settings.yaml"),
         reports=_load_model(ReportsConfig, d / "reports.yaml"),
         references=_load_model(ReferenceTablesConfig, d / "reference_tables.yaml"),
+        outputs=_load_model(OutputsConfig, d / "outputs.yaml"),
     )
+
+
+def save_outputs(config: OutputsConfig, config_dir: Path) -> None:
+    _save_yaml(config_dir / "outputs.yaml", config.model_dump())
 
 
 def save_references(config: ReferenceTablesConfig, config_dir: Path) -> None:

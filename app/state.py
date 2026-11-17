@@ -63,6 +63,8 @@ class RuntimeState:
     alert_manager: "AlertManager | None" = None
     watchdog: "WatchdogService | None" = None
     sqlite_writer_pool: Any = None
+    alarm_checker: Any = None          # AlarmRuleChecker (active alarms for outputs)
+    modbus_output: Any = None          # ModbusOutputService
 
     # Background task handles
     watchdog_task: asyncio.Task | None = None

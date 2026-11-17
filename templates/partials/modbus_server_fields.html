@@ -1,0 +1,41 @@
+{# Modbus TCP connection fields (mb: ModbusServerSettings or None, url: endpoint or "") #}
+{% set _hp = url.split('://', 1)[-1] if url else '' %}
+{% set _host = _hp.rsplit(':', 1)[0] if ':' in _hp else _hp %}
+{% set _port = _hp.rsplit(':', 1)[1] if ':' in _hp else '502' %}
+<div class="form-row">
+  <div class="form-group" style="flex:2;min-width:200px">
+    <label class="form-label">Host / IP</label>
+    <input class="input" type="text" name="mb_host" value="{{ _host }}" placeholder="192.168.1.20" required>
+  </div>
+  <div class="form-group" style="flex:0 0 100px">
+    <label class="form-label">Port</label>
+    <input class="input" type="number" name="mb_port" value="{{ _port }}" min="1" max="65535">
+  </div>
+  <div class="form-group" style="flex:0 0 100px">
+    <label class="form-label" title="Unit / slave id of the registers; a register can name its own">Unit ID</label>
+    <input class="input" type="number" name="mb_unit_id" value="{{ mb.unit_id if mb else 1 }}" min="0" max="255">
+  </div>
+  <div class="form-group" style="flex:0 0 120px">
+    <label class="form-label">Timeout (ms)</label>
+    <input class="input" type="number" name="mb_timeout_ms" value="{{ mb.timeout_ms if mb else 2000 }}" min="100" max="60000">
+  </div>
+</div>
+<div class="form-row">
+  <div class="form-group" style="flex:0 0 230px">
+    <label class="form-label" title="How 32/64-bit values are put together; a register can override it">Byte / word order</label>
+    {% set _o = mb.order if mb else 'ABCD' %}
+    <select class="select" name="mb_order">
+      {% for o, t in [('ABCD','ABCD · big-endian'),('CDAB','CDAB · word swap'),('BADC','BADC · byte swap'),('DCBA','DCBA · little-endian')] %}
+      <option value="{{ o }}" {% if _o == o %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group" style="flex:0 0 150px">
+    <label class="form-label" title="Registers per read request; some devices accept fewer than 125">Max. registers / read</label>
+    <input class="input" type="number" name="mb_max_registers" value="{{ mb.max_registers if mb else 125 }}" min="1" max="125">
+  </div>
+  <div class="form-group" style="flex:0 0 150px">
+    <label class="form-label" title="Unused registers between two configured ones that are read along to save a request">Max. gap</label>
+    <input class="input" type="number" name="mb_max_gap" value="{{ mb.max_gap if mb else 10 }}" min="0" max="100">
+  </div>
+</div>

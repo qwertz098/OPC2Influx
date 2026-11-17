@@ -87,6 +87,15 @@ class AlarmRuleChecker:
             except Exception as exc:
                 logger.error("AlarmRuleChecker error: %s", exc)
 
+    def is_active(self, rule: "AlarmRuleConfig", now: datetime | None = None) -> bool:
+        """True while the rule's condition holds and has held for its delay
+        (published as a coil by the Modbus output)."""
+        since = self.condition_since.get(rule.id)
+        if not rule.enabled or since is None:
+            return False
+        now = now or datetime.now(timezone.utc)
+        return (now - since).total_seconds() >= rule.alert_delay_seconds
+
     @staticmethod
     def history_signals(rule: "AlarmRuleConfig") -> list[tuple[str, str]]:
         """(subscription_id, unit): the alarm signal first, then the extra ones."""

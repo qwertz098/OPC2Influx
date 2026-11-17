@@ -34,6 +34,8 @@ RUN python scripts/download_vendor.py
 RUN mkdir -p /config /data
 
 EXPOSE 8000
+# Modbus TCP server of the app (Outputs page), off by default
+EXPOSE 5020
 
 # MALLOC_ARENA_MAX: glibc otherwise keeps a malloc arena per thread, which costs
 # RAM on small devices for no gain here

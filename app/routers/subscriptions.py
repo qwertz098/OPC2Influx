@@ -245,6 +245,8 @@ async def check_stale(request: Request, state: RuntimeState = Depends(get_state)
         if sub.server_id not in configured_server_ids:
             stale.append(StaleEntry(sub=sub, reason="Server no longer configured"))
             continue
+        if sub.modbus is not None:
+            continue            # Modbus registers have no node to look up; read errors show on the register page
         if mgr is None or not mgr.is_connected(sub.server_id):
             skipped.append(sub)
             continue
