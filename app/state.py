@@ -66,6 +66,7 @@ class RuntimeState:
     sqlite_writer_pool: Any = None
     alarm_checker: Any = None          # AlarmRuleChecker (active alarms for outputs)
     modbus_output: Any = None          # ModbusOutputService
+    modbus_writer: Any = None          # ModbusWriteService (values written to devices)
 
     # Background task handles
     watchdog_task: asyncio.Task | None = None

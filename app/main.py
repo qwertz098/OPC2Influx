@@ -161,6 +161,9 @@ async def lifespan(app: FastAPI):
     from app.outputs.modbus_out import ModbusOutputService
     state.modbus_output = ModbusOutputService(state)
     _modbus_out_task = asyncio.create_task(state.modbus_output.run(), name="modbus-output")
+    from app.outputs.modbus_write import ModbusWriteService
+    state.modbus_writer = ModbusWriteService(state)
+    _modbus_write_task = asyncio.create_task(state.modbus_writer.run(), name="modbus-write")
     asyncio.create_task(StaleValueChecker().run(state), name="stale-watchdog")
     from app.reports.scheduler import ReportScheduler
     asyncio.create_task(ReportScheduler().run(state), name="report-scheduler")
@@ -175,7 +178,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     _modbus_out_task.cancel()
-    await asyncio.gather(_modbus_out_task, return_exceptions=True)
+    _modbus_write_task.cancel()
+    await asyncio.gather(_modbus_out_task, _modbus_write_task, return_exceptions=True)
     if state.watchdog_task:
         state.watchdog_task.cancel()
     if state.folder_scanner_task:
