@@ -45,7 +45,7 @@ The app connects to one or more OPC UA servers, subscribes to selected variables
    ```
    Opens the web UI at [http://localhost:8000](http://localhost:8000).
 
-3. **Add your OPC UA server** in the Servers tab, then browse and subscribe to signals.
+3. **Add your OPC UA server** in the Inputs tab, then browse and subscribe to signals.
 
 ---
 

@@ -7,7 +7,7 @@
   <span class="badge {% if status and status.connected %}badge-ok{% else %}badge-error{% endif %}" id="mbConn">
     {{ 'Connected' if (status and status.connected) else 'Disconnected' }}</span>
   <span class="mono text-sm text-muted">{{ srv.endpoint_url }} · unit {{ srv.modbus.unit_id }} · {{ srv.modbus.order }}</span>
-  <a class="btn btn-ghost btn-sm" href="/config/servers" style="margin-left:auto">← Servers</a>
+  <a class="btn btn-ghost btn-sm" href="/config/servers" style="margin-left:auto">← Inputs</a>
 </div>
 <div id="mbConnError" class="text-sm" style="color:var(--bad);margin:-6px 0 8px">{% if status and status.last_error and not status.connected %}{{ status.last_error }}{% endif %}</div>
 
