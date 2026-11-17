@@ -24,9 +24,9 @@
     <a href="/chart" class="nav-link {% if request.url.path.startswith('/chart') and not request.url.path.startswith('/chart/history') %}active{% endif %}">Chart</a>
     <a href="/chart/history" class="nav-link {% if request.url.path.startswith('/chart/history') %}active{% endif %}">History</a>
     <a href="/references" class="nav-link {% if request.url.path.startswith('/references') %}active{% endif %}">References</a>
-    <div class="nav-divider"></div>
-    <a href="/config/servers" class="nav-link {% if request.url.path.startswith('/config/servers') %}active{% endif %}">Inputs</a>
     <a href="/outputs" class="nav-link {% if request.url.path.startswith('/outputs') %}active{% endif %}">Outputs</a>
+    <div class="nav-divider"></div>
+    <a href="/config/servers" class="nav-link {% if request.url.path.startswith('/config/servers') %}active{% endif %}">Servers</a>
     <a href="/config/influxdb" class="nav-link {% if request.url.path.startswith('/config/influxdb') %}active{% endif %}">InfluxDB</a>
     <a href="/config/sqlite" class="nav-link {% if request.url.path.startswith('/config/sqlite') %}active{% endif %}">SQLite</a>
     <a href="/config/tags" class="nav-link {% if request.url.path.startswith('/config/tags') %}active{% endif %}">Tags</a>

@@ -5,23 +5,32 @@
 <div class="page-header">
   <h1>Outputs</h1>
   <span class="text-sm text-muted">Values the app publishes</span>
+  <span class="actions" style="margin-left:auto">
+    {% if 'modbus_server' not in tiles %}<button type="button" class="btn btn-primary btn-sm" onclick="tile('add', 'modbus_server')"
+      title="The app as a Modbus TCP server: PLCs / SCADA read values, alarms and status bits">+ Modbus server</button>{% endif %}
+    {% if 'modbus_write' not in tiles %}<button type="button" class="btn btn-primary btn-sm" onclick="tile('add', 'modbus_write')"
+      title="Write values to Modbus devices of the Servers page">+ Write to Modbus</button>{% endif %}
+    <button type="button" class="btn btn-primary btn-sm" disabled title="Coming later">+ Write to MQTT</button>
+  </span>
 </div>
+{% if not tiles %}
+<div class="card mb-3"><div class="card-body text-sm text-muted" style="text-align:center;padding:28px">
+  Nothing is published yet. Add a tile above: <strong>Modbus server</strong> (the app as a Modbus TCP server) or
+  <strong>Write to Modbus</strong> (write values into Modbus devices).</div></div>
+{% endif %}
 
+{% if 'modbus_server' in tiles %}
+<div class="tile" id="tile-modbus_server">
 <div class="card mb-3">
   <div class="card-header" style="display:flex;align-items:center;gap:10px">
     <span>Modbus TCP server</span>
+    <label class="switch" title="Server on / off"><input type="checkbox" id="ms_enabled" {% if ms.enabled %}checked{% endif %} onchange="srvToggle(this)"><span></span></label>
     <span id="srvBadge" class="badge"></span>
     <span id="srvInfo" class="text-sm text-muted"></span>
+    <button type="button" class="btn btn-ghost btn-xs tile-close" onclick="tile('remove', 'modbus_server')" title="Remove this tile: the Modbus server is switched off, its settings are kept">✕</button>
   </div>
   <div class="card-body">
     <div class="form-row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end">
-      <div class="form-group" style="flex:0 0 110px">
-        <label class="form-label">Server</label>
-        <select class="select" id="ms_enabled">
-          <option value="1" {% if ms.enabled %}selected{% endif %}>On</option>
-          <option value="0" {% if not ms.enabled %}selected{% endif %}>Off</option>
-        </select>
-      </div>
       <div class="form-group" style="flex:0 0 110px">
         <label class="form-label">Port</label>
         <input class="input" id="ms_port" type="text" inputmode="numeric" maxlength="5" value="{{ ms.port }}">
@@ -48,7 +57,7 @@
         </select>
       </div>
     </div>
-    <p class="text-xs text-muted" style="margin:8px 0 0">Any unit id is answered. Values are read-only for clients; with
+    <p class="text-xs text-muted" style="margin:8px 0 0">Switch the server on and off at the top. Any unit id is answered. Values are read-only for clients; with
       <em>Write registers writable</em>, clients can write the registers of kind <em>write</em>, e.g. setpoints or acknowledgements from a
       PLC or SCADA, and those values can be recorded to InfluxDB. Addresses not in the map read 0.</p>
     <div class="form-actions form-actions--edit">
@@ -84,29 +93,29 @@
   </div>
 </div>
 
+</div>
+{% endif %}
+
+{% if 'modbus_write' in tiles %}
+<div class="tile" id="tile-modbus_write">
 <!-- Write to Modbus devices -->
 <div class="card mb-3">
   <div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     <span>Write to Modbus devices</span>
+    <label class="switch" title="Writing on / off: nothing is written to any device while off"><input type="checkbox" id="mw_enabled" {% if mw.enabled %}checked{% endif %} onchange="mwToggle(this)"><span></span></label>
     <span id="wrBadge" class="badge {% if mw.enabled %}badge-ok{% else %}badge-mode{% endif %}">{{ 'Writing' if mw.enabled else 'Off' }}</span>
     <input class="input input-sm" id="wrFilter" placeholder="Filter…" style="max-width:200px" oninput="wrFilter()">
     <span class="text-sm text-muted" id="wrCount"></span>
     <span class="actions" style="margin-left:auto">
       <button type="button" class="btn btn-tool btn-xs" onclick="wrAll(true)">Alle an</button>
       <button type="button" class="btn btn-tool btn-xs" onclick="wrAll(false)">Alle ab</button>
-      <button type="button" class="btn btn-primary btn-xs" onclick="pickOpen('write')" {% if not devices %}disabled title="Add a Modbus server on the Inputs page first"{% endif %}>+ Signals</button>
+      <button type="button" class="btn btn-primary btn-xs" onclick="pickOpen('write')" {% if not devices %}disabled title="Add a Modbus server on the Servers page first"{% endif %}>+ Signals</button>
       <button type="button" class="btn btn-primary btn-xs" onclick="wrAddAlarms()" {% if not devices %}disabled{% endif %}>+ Alarms</button>
+      <button type="button" class="btn btn-ghost btn-xs tile-close" onclick="tile('remove', 'modbus_write')" title="Remove this tile: writing is switched off, its settings are kept">✕</button>
     </span>
   </div>
   <div class="card-body">
     <div class="form-row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end">
-      <div class="form-group" style="flex:0 0 110px">
-        <label class="form-label" title="Master switch: nothing is written to any device while Off">Writing</label>
-        <select class="select" id="mw_enabled">
-          <option value="1" {% if mw.enabled %}selected{% endif %}>On</option>
-          <option value="0" {% if not mw.enabled %}selected{% endif %}>Off</option>
-        </select>
-      </div>
       <div class="form-group" style="flex:0 0 170px">
         <label class="form-label" title="Unchanged values are written again this often, so a restarted device gets them back">Resend unchanged</label>
         <select class="select" id="mw_resend">
@@ -116,7 +125,7 @@
       </div>
     </div>
     <p class="text-xs text-muted" style="margin:8px 0 0">Writes values to devices that are Modbus servers on the
-      <a href="/config/servers">Inputs</a> page, over their connection (no registers to read needed). A value is written when it
+      <a href="/config/servers">Servers</a> page, over their connection (no registers to read needed). A value is written when it
       changes and, with <em>Resend</em>, again after that time. Without a valid value nothing is written; the optional
       status coil is written 0 then. <strong>Writing changes values in the device</strong>: check addresses with its documentation.</p>
     <div class="form-actions form-actions--edit">
@@ -134,6 +143,9 @@
     </div>
   </div>
 </div>
+
+</div>
+{% endif %}
 
 <!-- Edit a write -->
 <div class="card mb-3" id="wrEditor" hidden>
@@ -305,6 +317,11 @@ const KIND = {value: ['value', 'badge-mode', 'Read-only: the signal’s latest v
               received: ['write', 'badge-ok', 'Clients write this register']};
 let editId = null, editKind = 'value';
 
+async function tile(action, name) {
+  if (action === 'remove' && !confirm('Remove this tile? Its function is switched off; the settings are kept and come back when you add the tile again.')) return;
+  const r = await post('/outputs/tiles', {[action]: name});
+  if (r.ok) location.reload();
+}
 function post(url, body) {
   return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
 }
@@ -318,8 +335,20 @@ function srvShow(s) {
   $('srvInfo').textContent = s.running ? `port ${s.port} · ${s.clients} client${s.clients === 1 ? '' : 's'} · ${s.requests} requests · ${s.writes} writes`
                                        : (s.error || '');
 }
+async function srvToggle(cb) {
+  const r = await post('/outputs/server', {enabled: cb.checked});
+  if (!r.ok) { cb.checked = !cb.checked; return; }
+  srvShow(await r.json());
+}
+async function mwToggle(cb) {
+  if (cb.checked && !confirm('Start writing to the Modbus devices?')) { cb.checked = false; return; }
+  const r = await post('/outputs/writes/settings', {enabled: cb.checked});
+  if (!r.ok) { cb.checked = !cb.checked; return; }
+  const d = await r.json();
+  $('wrBadge').textContent = d.enabled ? 'Writing' : 'Off'; $('wrBadge').className = 'badge ' + (d.enabled ? 'badge-ok' : 'badge-mode');
+}
 async function srvSave() {
-  const r = await post('/outputs/server', {enabled: $('ms_enabled').value === '1', port: parseInt($('ms_port').value) || 5020,
+  const r = await post('/outputs/server', {port: parseInt($('ms_port').value) || 5020,
     order: $('ms_order').value, update_ms: parseInt($('ms_update').value), writable: $('ms_writable').value === '1'});
   const d = await r.json();
   $('srvMsg').textContent = r.ok ? 'Saved' : (d.error || 'Failed'); $('srvMsg').style.color = r.ok ? '' : 'var(--bad)';
@@ -498,7 +527,7 @@ function wrRender() {
       <td><div class="actions"><button type="button" class="btn btn-ghost btn-xs" onclick="wrEdit('${w.id}')">Edit</button>
         <button type="button" class="btn btn-danger btn-xs" onclick="wrDelete('${w.id}')">Delete</button></div></td></tr>`;
   }).join('') : `<tr><td colspan="10" class="text-muted text-sm" style="text-align:center;padding:16px">${DEVICES.length
-      ? 'Nothing written yet: add signals or alarms.' : 'Add the device as a Modbus server on the Inputs page first.'}</td></tr>`;
+      ? 'Nothing written yet: add signals or alarms.' : 'Add the device as a Modbus server on the Servers page first.'}</td></tr>`;
   wrFilter();
 }
 function wrVisible() { return [...document.querySelectorAll('#wrRows tr[data-id]')].filter(tr => !tr.hidden); }
@@ -547,7 +576,7 @@ async function wrAddAlarms() {
   location.reload();
 }
 async function mwSave() {
-  const r = await post('/outputs/writes/settings', {enabled: $('mw_enabled').value === '1', resend_seconds: parseInt($('mw_resend').value)});
+  const r = await post('/outputs/writes/settings', {resend_seconds: parseInt($('mw_resend').value)});
   const d = await r.json();
   $('mwMsg').textContent = r.ok ? 'Saved' : 'Failed';
   if (r.ok) { $('wrBadge').textContent = d.enabled ? 'Writing' : 'Off'; $('wrBadge').className = 'badge ' + (d.enabled ? 'badge-ok' : 'badge-mode'); }
@@ -581,7 +610,7 @@ async function wrSave() {
 async function refresh() {
   try {
     const d = await (await fetch('/outputs/values')).json();
-    srvShow(d.status);
+    if ($('srvBadge')) srvShow(d.status);
     document.querySelectorAll('#ptRows tr[data-id]').forEach(tr => {
       const v = d.points[tr.dataset.id], cell = tr.querySelector('.pt-val'), ok = tr.querySelector('.pt-valid');
       if (!v) return;
@@ -601,9 +630,9 @@ async function refresh() {
   } catch {}
 }
 (function () { let t = null; try { t = sessionStorage.getItem('outputs_msg'); sessionStorage.removeItem('outputs_msg'); } catch {} if (t) msg(t); })();
-srvShow({{ status | tojson }});
-render();
-wrRender();
+if ($('srvBadge')) srvShow({{ status | tojson }});
+if ($('ptRows')) render();
+if ($('wrRows')) wrRender();
 refresh();
 setInterval(refresh, 2000);
 </script>

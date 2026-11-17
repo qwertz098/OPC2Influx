@@ -63,12 +63,38 @@ async def page(request: Request, state: RuntimeState = Depends(get_state)):
                   for r in state.config.alarm_rules.rules],
         "status": state.modbus_output.status() if state.modbus_output else {},
         "mw": out.modbus_writes,
+        "tiles": out.shown_tiles(),
         "writes": [_write_json(state, t, labels, wbad) for t in out.modbus_writes.targets],
         "devices": [{"id": s.id, "label": s.display_name, "enabled": s.enabled, "order": s.modbus.order,
                      "unit_id": s.modbus.unit_id}
                     for s in state.config.servers.servers if s.protocol == "modbus"],
         "types": list(TYPES),
     })
+
+
+@router.post("/tiles")
+async def tiles(request: Request, state: RuntimeState = Depends(get_state)):
+    """Add a tile, or remove one: that switches its function off; its settings are kept."""
+    from app.config import OUTPUT_TILES
+    data = await request.json()
+    out = state.config.outputs
+    shown = out.shown_tiles()
+    name = data.get("add") or data.get("remove")
+    if name not in OUTPUT_TILES or name == "mqtt_write":
+        return JSONResponse({"error": "unknown tile"}, status_code=400)
+    if data.get("add") and name not in shown:
+        shown.append(name)
+    elif data.get("remove") and name in shown:
+        shown.remove(name)
+        if name == "modbus_server":
+            out.modbus_server.enabled = False
+        elif name == "modbus_write":
+            out.modbus_writes.enabled = False
+    out.tiles = shown
+    _save(state)
+    if state.modbus_output:
+        await state.modbus_output.sync()
+    return {"tiles": shown}
 
 
 @router.post("/server")
@@ -281,8 +307,10 @@ def _next_free_write(targets: list[ModbusWriteConfig], server_id: str, area: str
 async def write_settings(request: Request, state: RuntimeState = Depends(get_state)):
     data = await request.json()
     mw = state.config.outputs.modbus_writes
-    mw.enabled = bool(data.get("enabled"))
-    mw.resend_seconds = max(0, min(86400, int(data.get("resend_seconds") or 0)))
+    if "enabled" in data:
+        mw.enabled = bool(data["enabled"])
+    if "resend_seconds" in data:
+        mw.resend_seconds = max(0, min(86400, int(data.get("resend_seconds") or 0)))
     _save(state)
     return {"enabled": mw.enabled, "resend_seconds": mw.resend_seconds}
 
@@ -303,7 +331,7 @@ async def save_write(request: Request, state: RuntimeState = Depends(get_state))
         msg = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else str(exc)
         return JSONResponse({"error": msg}, status_code=400)
     if not any(s.id == t.server_id and s.protocol == "modbus" for s in state.config.servers.servers):
-        return JSONResponse({"error": "Choose a device (a Modbus server on the Inputs page)"}, status_code=400)
+        return JSONResponse({"error": "Choose a device (a Modbus server on the Servers page)"}, status_code=400)
     if t.scale == 0:
         return JSONResponse({"error": "scale must not be 0"}, status_code=400)
     if t.area == "coil":

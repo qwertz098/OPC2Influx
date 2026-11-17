@@ -608,11 +608,11 @@ class ModbusServerOutputConfig(BaseModel):
 
 
 class ModbusWriteConfig(BaseModel):
-    """A value written to an external Modbus device (a Modbus server on the Inputs page)."""
+    """A value written to an external Modbus device (a Modbus server on the Servers page)."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     kind: Literal["value", "alarm"] = "value"
     source_id: str = ""              # subscription id (value) or alarm rule id (alarm)
-    server_id: str = ""              # Modbus server (Inputs) whose connection is used
+    server_id: str = ""              # Modbus server (Servers page) whose connection is used
     enabled: bool = True
     area: Literal["holding", "coil"] = "holding"
     address: int = 0                 # 0-based
@@ -629,10 +629,25 @@ class ModbusWritesConfig(BaseModel):
     targets: list[ModbusWriteConfig] = []
 
 
+OUTPUT_TILES = ("modbus_server", "modbus_write", "mqtt_write")
+
+
 class OutputsConfig(BaseModel):
+    # Tiles shown on the Outputs page, in order; None = from what is configured
+    tiles: Optional[list[str]] = None
     modbus_server: ModbusServerOutputConfig = Field(default_factory=ModbusServerOutputConfig)
     points: list[OutputPointConfig] = []
     modbus_writes: ModbusWritesConfig = Field(default_factory=ModbusWritesConfig)
+
+    def shown_tiles(self) -> list[str]:
+        if self.tiles is not None:
+            return [t for t in self.tiles if t in OUTPUT_TILES]
+        out = []
+        if self.modbus_server.enabled or self.points:
+            out.append("modbus_server")
+        if self.modbus_writes.enabled or self.modbus_writes.targets:
+            out.append("modbus_write")
+        return out
 
 
 class AppConfig(BaseModel):

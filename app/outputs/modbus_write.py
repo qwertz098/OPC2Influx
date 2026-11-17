@@ -2,7 +2,7 @@
 Values written to external Modbus devices.
 
 Every entry names a source (a subscription's value or an alarm rule's state)
-and a target on a Modbus server of the Inputs page, whose connection is used.
+and a target on a Modbus server of the Servers page, whose connection is used.
 A value is written when it changes and, with resend_seconds, again after that
 time (so a restarted device gets every value back). Without a valid value
 nothing is written; the optional status coil is written 0 then (1 while the
@@ -97,10 +97,10 @@ class ModbusWriteService:
             srv = servers.get(t.server_id)
             res = self.results.setdefault(t.id, WriteResult())
             if srv is None:
-                res.error = "device not found (a Modbus server on the Inputs page)"
+                res.error = "device not found (a Modbus server on the Servers page)"
                 continue
             if not mgr.is_connected(srv.id):
-                res.error = "device not connected" if srv.enabled else "device is disabled on the Inputs page"
+                res.error = "device not connected" if srv.enabled else "device is disabled on the Servers page"
                 continue
             value, valid = self._source(t, now)
             point = _as_point(t)
