@@ -209,6 +209,7 @@ textarea.input { resize: vertical; }
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 14px; border-radius: var(--radius); border: 1px solid transparent;
   font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none;
+  line-height: 1.2;              /* same height for <a class="btn"> and <button> */
   transition: background .15s, border-color .15s, box-shadow .15s;
   white-space: nowrap;
 }
@@ -492,3 +493,7 @@ tr[id^="edit-"]:empty { display: none; }
 .pick-item { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 0; cursor: pointer; min-width: 0; }
 .pick-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ptEditor [hidden], #pick [hidden] { display: none !important; }
+/* Number fields look like the other inputs: no spin arrows */
+input.input[type=number] { appearance: textfield; -moz-appearance: textfield; }
+input.input[type=number]::-webkit-outer-spin-button,
+input.input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

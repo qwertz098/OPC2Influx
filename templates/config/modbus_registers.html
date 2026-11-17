@@ -19,8 +19,8 @@
     <span class="actions" style="margin-left:auto">
       <button type="button" class="btn btn-tool btn-xs" onclick="mbAll(true)" title="Read all (shown) registers">Alle an</button>
       <button type="button" class="btn btn-tool btn-xs" onclick="mbAll(false)" title="Read none of the (shown) registers">Alle ab</button>
-      <a class="btn btn-ghost btn-xs" href="/config/servers/{{ srv.id }}/registers/export.csv">Export CSV</a>
-      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('mbImport').click()">Import CSV</button>
+      <a class="btn btn-tool btn-xs" href="/config/servers/{{ srv.id }}/registers/export.csv">Export CSV</a>
+      <button type="button" class="btn btn-tool btn-xs" onclick="document.getElementById('mbImport').click()">Import CSV</button>
       <button type="button" class="btn btn-tool btn-xs" onclick="mbPasteOpen()" title="Paste a register table, e.g. from an AI or a spreadsheet">Paste list</button>
       <input type="file" id="mbImport" accept=".csv,text/csv" hidden onchange="mbImportCsv(this)">
       <button type="button" class="btn btn-primary btn-xs" onclick="mbEdit(null)">+ Register</button>
