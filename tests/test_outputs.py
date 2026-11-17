@@ -199,3 +199,110 @@ def test_signal_labels_unique(minimal_state):
     ]
     assert signal_labels(minimal_state) == {"a": "Pump_A.rValue", "b": "Pump_B.rValue",
                                             "c": "Speed"}
+
+
+# ---------------------------------------------------------------- writing to devices
+def test_write_service_to_device(state):
+    from app.config import ModbusServerSettings, ModbusWriteConfig, ServerConfig
+    from app.modbus.codec import decode
+    from app.modbus.manager import ModbusManager
+    from app.modbus.server import ModbusTcpServer, RegisterBank
+    from app.outputs.modbus_write import ModbusWriteService
+
+    async def go():
+        bank = RegisterBank()
+        device = ModbusTcpServer(bank, port=0)
+        await device.start()
+        state.config.servers.servers = [ServerConfig(id="dev", display_name="Device", protocol="modbus",
+                                                     endpoint_url=f"modbus-tcp://127.0.0.1:{device.port}",
+                                                     modbus=ModbusServerSettings(order="CDAB"))]
+        mgr = ModbusManager(state)
+        state.opcua_manager = types.SimpleNamespace(modbus=mgr)
+        await mgr.reconcile()
+        for _ in range(50):
+            if mgr.is_connected("dev"):
+                break
+            await asyncio.sleep(0.02)
+        mw = state.config.outputs.modbus_writes
+        mw.resend_seconds = 0
+        mw.targets = [
+            ModbusWriteConfig(id="w1", source_id="t", server_id="dev", area="holding", address=10,
+                              data_type="float32", status_address=5),
+            ModbusWriteConfig(id="w2", source_id="t", server_id="dev", area="holding", address=20,
+                              data_type="int16", scale=10, unit_id=3),
+            ModbusWriteConfig(id="w3", kind="alarm", source_id="a1", server_id="dev", area="coil", address=0,
+                              data_type="bool"),
+            ModbusWriteConfig(id="w4", source_id="gone", server_id="dev", area="holding", address=30,
+                              data_type="uint16", status_address=6),
+        ]
+        svc = ModbusWriteService(state)
+        await svc.tick()                                  # master switch off: nothing written
+        assert bank.holding == {} and svc.results == {}
+        mw.enabled = True
+        await svc.tick()
+        assert decode([bank.holding[10], bank.holding[11]], "float32", "CDAB") == 21.5   # device order
+        assert bank.coil[5] is True and bank.holding[20] == 215 and bank.coil[0] is False
+        assert 30 not in bank.holding and bank.coil[6] is False                        # no value: status 0
+        assert svc.results["w4"].error.startswith("no valid value")
+        # unchanged: no new write; changed: written
+        n = device.writes
+        await svc.tick()
+        assert device.writes == n
+        state._live["t"] = 30.0
+        await svc.tick()
+        assert bank.holding[20] == 300 and device.writes == n + 2
+        # the device refuses an address
+        bank.valid = {("holding", a) for a in range(0, 30)} | {("coil", a) for a in range(0, 10)}
+        mw.targets[3].source_id = "t"
+        await svc.tick()
+        assert "illegal data address" in svc.results["w4"].error
+        # a disabled entry is not written
+        mw.targets[1].enabled = False
+        state._live["t"] = 40.0
+        await svc.tick()
+        assert bank.holding[20] == 300
+        await mgr.stop_all()
+        await device.stop()
+        await svc.tick()
+        assert svc.results["w1"].error == "device not found (a Modbus server on the Inputs page)" or \
+            "not connected" in svc.results["w1"].error
+    asyncio.run(go())
+
+
+@pytest.mark.asyncio
+async def test_write_routes(async_client, tmp_config_dir):
+    import yaml
+    c = async_client
+    r = await c.post("/config/servers", data={"protocol": "modbus", "display_name": "D", "mb_host": "10.0.0.1"},
+                     follow_redirects=False)
+    base = r.headers["location"]
+    srv_id = base.split("/")[3]
+    ids = [(await c.post(base, json={"name": n, "address": str(a), "type": t, **x})).json()["id"]
+           for n, a, t, x in [("A", 0, "float32", {}), ("B", 2, "uint16", {"bit": "0"})]]
+    await c.post("/config/alarm-rules", data={"subscription_id": ids[0], "condition": ">", "threshold": "1"})
+    r = await c.post("/outputs/writes/add", json={"ids": ids, "server_id": srv_id, "type": "int32", "status": True})
+    assert r.status_code == 400 and "first address" in r.json()["error"]          # no default address
+    r = await c.post("/outputs/writes/add", json={"ids": ids, "server_id": srv_id, "type": "int32", "status": True,
+                                                  "start_register": 0, "start_coil": 0})
+    assert r.json() == {"added": 2}
+    r = await c.post("/outputs/writes/add", json={"alarms": True, "server_id": srv_id, "start_register": 0,
+                                                  "start_coil": "0"})
+    assert r.json() == {"added": 1}
+    assert (await c.post("/outputs/writes/add", json={"ids": ids, "server_id": "nope"})).status_code == 400
+    w = yaml.safe_load((tmp_config_dir / "outputs.yaml").read_text())["modbus_writes"]["targets"]
+    got = [(t["kind"], t["area"], t["address"], t["data_type"], t["status_address"]) for t in w]
+    assert got == [("value", "holding", 0, "int32", 0), ("value", "coil", 1, "bool", 2), ("alarm", "coil", 3, "bool", None)]
+    # overlap is refused, a valid edit saved
+    r = await c.post("/outputs/writes", json={"id": w[0]["id"], "server_id": srv_id, "area": "holding", "address": "1",
+                                              "data_type": "int32"})
+    assert r.status_code == 200
+    r = await c.post("/outputs/writes", json={"id": w[2]["id"], "server_id": srv_id, "area": "coil", "address": "1"})
+    assert r.status_code == 400 and "also written" in r.json()["error"]
+    assert (await c.post("/outputs/writes/settings", json={"enabled": True, "resend_seconds": 60})).json() == \
+        {"enabled": True, "resend_seconds": 60}
+    assert (await c.post("/outputs/writes/all", json={"enabled": False})).json() == {"changed": 3}
+    page = await c.get("/outputs")
+    assert page.status_code == 200 and "Write to Modbus devices" in page.text
+    assert "also read from this device as" in page.text     # hr1 int32 overlaps register A (hr0–1)
+    v = (await c.get("/outputs/values")).json()
+    assert v["writing"] is True and len(v["writes"]) == 3

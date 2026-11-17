@@ -497,3 +497,4 @@ tr[id^="edit-"]:empty { display: none; }
 input.input[type=number] { appearance: textfield; -moz-appearance: textfield; }
 input.input[type=number]::-webkit-outer-spin-button,
 input.input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#wrEditor [hidden] { display: none !important; }

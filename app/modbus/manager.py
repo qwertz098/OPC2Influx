@@ -183,6 +183,18 @@ class ModbusManager:
         """'unit/area/address' → last error, for the register page."""
         return dict(self._bad.get(server_id, {}))
 
+    async def write(self, server_id: str, unit: int, area: str, address: int, values: list) -> None:
+        """Write coils (bools) or holding registers (words) over the running
+        connection; raises ConnectionError when not connected, ModbusError
+        when the device refuses."""
+        client = self._clients.get(server_id)
+        if client is None or not client.connected:
+            raise ConnectionError("not connected")
+        if area == "coil":
+            await client.write_coils(unit, address, [bool(v) for v in values])
+        else:
+            await client.write_registers(unit, address, [int(v) for v in values])
+
     async def read_raw(self, srv: ServerConfig, unit: int, function: int, address: int, count: int) -> list:
         """One read over the running connection, or a short-lived one if the
         server is disabled / not connected (register editor preview)."""

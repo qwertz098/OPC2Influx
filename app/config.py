@@ -607,9 +607,32 @@ class ModbusServerOutputConfig(BaseModel):
     update_ms: int = 1000
 
 
+class ModbusWriteConfig(BaseModel):
+    """A value written to an external Modbus device (a Modbus server on the Inputs page)."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    kind: Literal["value", "alarm"] = "value"
+    source_id: str = ""              # subscription id (value) or alarm rule id (alarm)
+    server_id: str = ""              # Modbus server (Inputs) whose connection is used
+    enabled: bool = True
+    area: Literal["holding", "coil"] = "holding"
+    address: int = 0                 # 0-based
+    data_type: _MB_TYPES = "float32"
+    order: Literal["", "ABCD", "CDAB", "BADC", "DCBA"] = ""    # "" = the server's order
+    scale: float = 1.0               # register = value × scale
+    unit_id: Optional[int] = None    # None = the server's unit id
+    status_address: Optional[int] = None   # coil on the device: 1 while the value is valid
+
+
+class ModbusWritesConfig(BaseModel):
+    enabled: bool = False            # master switch: nothing is written while off
+    resend_seconds: int = 60         # also write unchanged values this often (0 = only on change)
+    targets: list[ModbusWriteConfig] = []
+
+
 class OutputsConfig(BaseModel):
     modbus_server: ModbusServerOutputConfig = Field(default_factory=ModbusServerOutputConfig)
     points: list[OutputPointConfig] = []
+    modbus_writes: ModbusWritesConfig = Field(default_factory=ModbusWritesConfig)
 
 
 class AppConfig(BaseModel):

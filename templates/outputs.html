@@ -84,10 +84,112 @@
   </div>
 </div>
 
+<!-- Write to Modbus devices -->
+<div class="card mb-3">
+  <div class="card-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span>Write to Modbus devices</span>
+    <span id="wrBadge" class="badge {% if mw.enabled %}badge-ok{% else %}badge-mode{% endif %}">{{ 'Writing' if mw.enabled else 'Off' }}</span>
+    <input class="input input-sm" id="wrFilter" placeholder="Filter…" style="max-width:200px" oninput="wrFilter()">
+    <span class="text-sm text-muted" id="wrCount"></span>
+    <span class="actions" style="margin-left:auto">
+      <button type="button" class="btn btn-tool btn-xs" onclick="wrAll(true)">Alle an</button>
+      <button type="button" class="btn btn-tool btn-xs" onclick="wrAll(false)">Alle ab</button>
+      <button type="button" class="btn btn-primary btn-xs" onclick="pickOpen('write')" {% if not devices %}disabled title="Add a Modbus server on the Inputs page first"{% endif %}>+ Signals</button>
+      <button type="button" class="btn btn-primary btn-xs" onclick="wrAddAlarms()" {% if not devices %}disabled{% endif %}>+ Alarms</button>
+    </span>
+  </div>
+  <div class="card-body">
+    <div class="form-row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="flex:0 0 110px">
+        <label class="form-label" title="Master switch: nothing is written to any device while Off">Writing</label>
+        <select class="select" id="mw_enabled">
+          <option value="1" {% if mw.enabled %}selected{% endif %}>On</option>
+          <option value="0" {% if not mw.enabled %}selected{% endif %}>Off</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:0 0 170px">
+        <label class="form-label" title="Unchanged values are written again this often, so a restarted device gets them back">Resend unchanged</label>
+        <select class="select" id="mw_resend">
+          {% for v, t in [(0,'never'),(10,'every 10 s'),(60,'every 1 min'),(300,'every 5 min'),(3600,'every 1 h')] %}
+          <option value="{{ v }}" {% if mw.resend_seconds == v %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <p class="text-xs text-muted" style="margin:8px 0 0">Writes values to devices that are Modbus servers on the
+      <a href="/config/servers">Inputs</a> page, over their connection (no registers to read needed). A value is written when it
+      changes and, with <em>Resend</em>, again after that time. Without a valid value nothing is written; the optional
+      status coil is written 0 then. <strong>Writing changes values in the device</strong>: check addresses with its documentation.</p>
+    <div class="form-actions form-actions--edit">
+      <span id="mwMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" onclick="mwSave()">Save</button>
+    </div>
+  </div>
+  <div class="card-body" style="padding:0">
+    <div style="overflow-x:auto">
+    <table class="table fit-table mb-table">
+      <thead><tr><th>On</th><th>Kind</th><th>Name</th><th>Device</th><th>Register</th><th>Type</th>
+        <th class="num">Scale</th><th title="Coil on the device: 1 while the value is valid">Status coil</th><th class="num">Written</th><th></th></tr></thead>
+      <tbody id="wrRows"></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- Edit a write -->
+<div class="card mb-3" id="wrEditor" hidden>
+  <div class="card-header" id="wrEditorTitle">Write</div>
+  <div class="card-body">
+    <div class="form-row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="flex:2;min-width:220px">
+        <label class="form-label">Source</label>
+        <input class="input" id="w_source" disabled>
+      </div>
+      <div class="form-group" style="flex:0 0 200px">
+        <label class="form-label">Device</label>
+        <select class="select" id="w_device">{% for d in devices %}<option value="{{ d.id }}">{{ d.label }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group" style="flex:0 0 160px">
+        <label class="form-label">Area</label>
+        <select class="select" id="w_area" onchange="wrEditorUi()"><option value="holding">Holding register</option><option value="coil">Coil</option></select>
+      </div>
+      <div class="form-group" style="flex:0 0 110px">
+        <label class="form-label" title="0-based protocol address">Address</label>
+        <input class="input" id="w_address" type="number" min="0" max="65535">
+      </div>
+      <div class="form-group w-reg" style="flex:0 0 120px">
+        <label class="form-label">Type</label>
+        <select class="select" id="w_type">{% for t in types if t != 'bool' %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group w-reg" style="flex:0 0 150px">
+        <label class="form-label">Order</label>
+        <select class="select" id="w_order"><option value="">Device default</option>
+          {% for o in ['ABCD','CDAB','BADC','DCBA'] %}<option value="{{ o }}">{{ o }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group w-reg" style="flex:0 0 100px">
+        <label class="form-label" title="register = value × scale">Scale</label>
+        <input class="input" id="w_scale" inputmode="decimal">
+      </div>
+      <div class="form-group" style="flex:0 0 100px">
+        <label class="form-label" title="Empty: the device's unit id">Unit ID</label>
+        <input class="input" id="w_unit" type="number" min="0" max="255" placeholder="device">
+      </div>
+      <div class="form-group" style="flex:0 0 130px">
+        <label class="form-label" title="Coil on the device that is 1 while the value is valid; empty = none">Status coil</label>
+        <input class="input" id="w_status" type="number" min="0" max="65535" placeholder="none">
+      </div>
+    </div>
+    <div class="form-actions form-actions--edit">
+      <span id="wrEditorMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" onclick="wrSave()">Save</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('wrEditor').hidden = true">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Pick signals -->
 <div class="card mb-3" id="pick" hidden>
   <div class="card-header" style="display:flex;align-items:center;gap:8px">
-    <span>Add signals</span>
+    <span id="pickTitle">Add signals</span>
     <input class="input input-sm" id="pickFilter" placeholder="Filter…" style="max-width:240px" oninput="pickRender()">
     <label class="checkbox-label text-sm"><input type="checkbox" id="pickAll" onchange="pickAllShown(this.checked)"> all shown</label>
     <span class="text-sm text-muted" id="pickCount" style="margin-left:auto"></span>
@@ -95,7 +197,19 @@
   <div class="card-body">
     <div id="pickList" class="pick-list"></div>
     <div class="form-row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
-      <div class="form-group" style="flex:0 0 170px">
+      <div class="form-group write-only" style="flex:0 0 220px">
+        <label class="form-label">Device</label>
+        <select class="select" id="pickDevice" onchange="pickRender()">{% for d in devices %}<option value="{{ d.id }}">{{ d.label }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group write-only" style="flex:0 0 140px">
+        <label class="form-label" title="First holding register to write numbers to (0-based). Check the device documentation.">First register</label>
+        <input class="input" id="pickStartReg" type="number" min="0" max="65535" placeholder="required">
+      </div>
+      <div class="form-group write-only" style="flex:0 0 140px">
+        <label class="form-label" title="First coil for on/off values and status bits (0-based)">First coil</label>
+        <input class="input" id="pickStartCoil" type="number" min="0" max="65535" placeholder="required">
+      </div>
+      <div class="form-group map-only" style="flex:0 0 170px">
         <label class="form-label">Numbers as</label>
         <select class="select" id="pickArea"><option value="holding">Holding registers</option><option value="input">Input registers</option></select>
       </div>
@@ -103,17 +217,17 @@
         <label class="form-label">Type</label>
         <select class="select" id="pickType">{% for t in types if t != 'bool' %}<option value="{{ t }}" {% if t == 'float32' %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
       </div>
-      <div class="form-group" style="flex:0 0 170px">
+      <div class="form-group map-only" style="flex:0 0 170px">
         <label class="form-label">On/off values as</label>
         <select class="select" id="pickBool"><option value="coil">Coils</option><option value="discrete">Discrete inputs</option></select>
       </div>
       <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px">
-        <label class="checkbox-label" title="Each value gets a discrete input that is 1 while the value is valid (subscription on, server connected, value read)">
+        <label class="checkbox-label" id="pickStatusLabel" title="Each value gets a status bit that is 1 while the value is valid (subscription on, server connected, value read)">
           <input type="checkbox" id="pickStatus" checked> Status bit per value</label>
       </div>
     </div>
     <div class="form-actions form-actions--edit">
-      <span class="text-xs text-muted" style="margin-right:auto">Placed at the next free addresses; change single ones with Edit.
+      <span class="text-xs text-muted" style="margin-right:auto">Placed at the next free addresses<span class="write-only"> of the device: numbers in holding registers, on/off values in coils</span>; change single ones with Edit.
         Grey: subscription is off (not read, no value until switched on).</span>
       <button type="button" class="btn btn-primary btn-xs" id="pickBtn" onclick="pickAdd()" disabled>Add</button>
       <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('pick').hidden = true">Cancel</button>
@@ -182,6 +296,8 @@
 <script>
 const PTS = {{ points | tojson }};
 const SUBS = {{ subs | tojson }};
+const WRS = {{ writes | tojson }};
+const DEVICES = {{ devices | tojson }};
 const $ = id => document.getElementById(id);
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const AREA_SHORT = {holding: 'hr', input: 'ir', coil: 'co', discrete: 'di'};
@@ -319,11 +435,20 @@ async function ptSave() {
 }
 
 // --- pick signals ---
-let picked = new Set();
-function pickOpen() { $('pick').hidden = false; $('ptEditor').hidden = true; picked = new Set(); pickRender();
-  $('pick').scrollIntoView({behavior: 'smooth', block: 'start'}); $('pickFilter').focus(); }
+let picked = new Set(), pickMode = 'map';
+function pickOpen(mode) {
+  pickMode = mode === 'write' ? 'write' : 'map';
+  $('pickTitle').textContent = pickMode === 'write' ? 'Write signals to a Modbus device' : 'Add signals to the register map';
+  document.querySelectorAll('#pick .map-only').forEach(el => el.hidden = pickMode === 'write');
+  document.querySelectorAll('#pick .write-only').forEach(el => el.hidden = pickMode !== 'write');
+  $('pickStatus').checked = pickMode !== 'write';
+  $('pick').hidden = false; $('ptEditor').hidden = true; $('wrEditor').hidden = true; picked = new Set(); pickRender();
+  $('pick').scrollIntoView({behavior: 'smooth', block: 'start'}); $('pickFilter').focus();
+}
 function pickCandidates() {
-  const used = new Set(PTS.filter(p => p.kind === 'value').map(p => p.source_id));
+  const used = new Set(pickMode === 'write'
+    ? WRS.filter(w => w.kind === 'value' && w.server_id === $('pickDevice').value).map(w => w.source_id)
+    : PTS.filter(p => p.kind === 'value').map(p => p.source_id));
   const q = $('pickFilter').value.trim().toLowerCase();
   return SUBS.filter(s => !used.has(s.id) && (!q || (s.label + ' ' + s.measurement).toLowerCase().includes(q)));
 }
@@ -340,10 +465,115 @@ function pickRender() {
 function pickOne(cb) { cb.checked ? picked.add(cb.value) : picked.delete(cb.value); pickRender(); }
 function pickAllShown(on) { pickCandidates().forEach(s => on ? picked.add(s.id) : picked.delete(s.id)); pickRender(); }
 async function pickAdd() {
-  const r = await post('/outputs/points/add-signals', {ids: [...picked], area: $('pickArea').value, type: $('pickType').value,
-    bool_area: $('pickBool').value, status: $('pickStatus').checked});
+  const r = pickMode === 'write'
+    ? await post('/outputs/writes/add', {ids: [...picked], server_id: $('pickDevice').value, type: $('pickType').value,
+                                         status: $('pickStatus').checked, start_register: $('pickStartReg').value,
+                                         start_coil: $('pickStartCoil').value})
+    : await post('/outputs/points/add-signals', {ids: [...picked], area: $('pickArea').value, type: $('pickType').value,
+                                                 bool_area: $('pickBool').value, status: $('pickStatus').checked});
   const d = await r.json();
+  if (!r.ok) { $('pickCount').textContent = d.error || 'Failed'; return; }
   try { sessionStorage.setItem('outputs_msg', `${d.added} signal${d.added === 1 ? '' : 's'} added`); } catch {}
+  location.reload();
+}
+
+// --- writes to devices ---
+function wrRender() {
+  const rows = [...WRS].sort((a, b) => a.device.localeCompare(b.device) || a.area.localeCompare(b.area) || a.address - b.address);
+  $('wrRows').innerHTML = rows.length ? rows.map(w => {
+    const n = w.area === 'coil' ? 1 : ({int16: 1, uint16: 1, int32: 2, uint32: 2, float32: 2, int64: 4, uint64: 4, float64: 4}[w.data_type] || 1);
+    const reg = (w.area === 'coil' ? 'co' : 'hr') + w.address + (n > 1 ? '–' + (w.address + n - 1) : '') + (w.unit_id !== null ? ' @' + w.unit_id : '');
+    const k = w.kind === 'alarm' ? ['alarm', 'badge-error'] : ['value', 'badge-mode'];
+    return `<tr data-id="${w.id}" data-text="${esc((w.label + ' ' + w.device + ' ' + reg + ' ' + w.modicon).toLowerCase())}"
+        class="${w.enabled ? '' : 'opacity-50'}" ${w.problem ? 'style="color:var(--bad)"' : ''}>
+      <td><input type="checkbox" class="wr-on" ${w.enabled ? 'checked' : ''} onchange="wrToggle(this)"></td>
+      <td><span class="badge ${k[1]}">${k[0]}</span></td>
+      <td class="ellipsis" style="max-width:260px" title="${esc(w.label)}${w.problem ? '\n' + esc(w.problem) : ''}${w.warning ? '\n' + esc(w.warning) : ''}">${esc(w.label)}${w.problem ? ' ⚠' : ''}${w.warning && !w.problem ? ' <span style="color:var(--warn, #b26b00)" title="' + esc(w.warning) + '">⚠</span>' : ''}</td>
+      <td class="text-sm">${esc(w.device)}</td>
+      <td class="mono text-sm" title="Modicon ${w.modicon}">${reg}</td>
+      <td class="mono text-sm">${w.area === 'coil' ? 'bool' : esc(w.data_type + (w.order ? ' ' + w.order : ''))}</td>
+      <td class="num mono text-sm">${w.area === 'coil' || w.scale === 1 ? '<span class="text-muted">—</span>' : '×' + w.scale}</td>
+      <td class="mono text-sm">${w.status_address !== null ? 'co' + w.status_address : '<span class="text-muted">—</span>'}</td>
+      <td class="num mono text-sm wr-val"><span class="text-muted">—</span></td>
+      <td><div class="actions"><button type="button" class="btn btn-ghost btn-xs" onclick="wrEdit('${w.id}')">Edit</button>
+        <button type="button" class="btn btn-danger btn-xs" onclick="wrDelete('${w.id}')">Delete</button></div></td></tr>`;
+  }).join('') : `<tr><td colspan="10" class="text-muted text-sm" style="text-align:center;padding:16px">${DEVICES.length
+      ? 'Nothing written yet: add signals or alarms.' : 'Add the device as a Modbus server on the Inputs page first.'}</td></tr>`;
+  wrFilter();
+}
+function wrVisible() { return [...document.querySelectorAll('#wrRows tr[data-id]')].filter(tr => !tr.hidden); }
+function wrFilter() {
+  const q = $('wrFilter').value.trim().toLowerCase();
+  document.querySelectorAll('#wrRows tr[data-id]').forEach(tr => tr.hidden = q && !tr.dataset.text.includes(q));
+  const on = WRS.filter(w => w.enabled).length, vis = wrVisible().length;
+  $('wrCount').textContent = WRS.length ? `${on} of ${WRS.length} on` + (vis < WRS.length ? ` · ${vis} shown` : '') : '';
+}
+async function wrToggle(cb) {
+  const id = cb.closest('tr').dataset.id;
+  const r = await post(`/outputs/writes/${id}/toggle`, {enabled: cb.checked});
+  if (!r.ok) { cb.checked = !cb.checked; return; }
+  WRS.find(w => w.id === id).enabled = cb.checked;
+  cb.closest('tr').classList.toggle('opacity-50', !cb.checked); wrFilter();
+}
+async function wrAll(on) {
+  const vis = wrVisible(), filtered = vis.length < WRS.length;
+  if (!vis.length || !confirm(`${on ? 'Write' : 'Stop writing'} ${filtered ? 'the ' + vis.length + ' shown' : 'all ' + WRS.length} entries?`)) return;
+  const ids = vis.map(tr => tr.dataset.id);
+  const r = await post('/outputs/writes/all', {enabled: on, ids: filtered ? ids : []});
+  if (!r.ok) return;
+  ids.forEach(id => WRS.find(w => w.id === id).enabled = on); wrRender();
+}
+async function wrDelete(id) {
+  const w = WRS.find(x => x.id === id);
+  if (!confirm(`Stop writing ${w.label} to ${w.device} and delete the entry?`)) return;
+  await post(`/outputs/writes/${id}/delete`);
+  WRS.splice(WRS.indexOf(w), 1); wrRender();
+}
+async function wrAddAlarms() {
+  const dev = DEVICES.length === 1 ? DEVICES[0] : null;
+  let id = dev ? dev.id : null;
+  if (!id) {
+    const names = DEVICES.map((d, i) => `${i + 1}: ${d.label}`).join('\n');
+    const n = parseInt(prompt('Write all alarms as coils to which device?\n' + names, '1'));
+    if (!n || !DEVICES[n - 1]) return;
+    id = DEVICES[n - 1].id;
+  }
+  const start = prompt('First coil on the device for the alarms (0-based address, check the device documentation):', '');
+  if (start === null || start.trim() === '') return;
+  const r = await post('/outputs/writes/add', {alarms: true, server_id: id, start_register: 0, start_coil: start.trim()});
+  const d = await r.json();
+  if (!r.ok || !d.added) { msg(d.error || 'All alarm rules are written to this device already (or there are none).'); return; }
+  try { sessionStorage.setItem('outputs_msg', `${d.added} alarm${d.added === 1 ? '' : 's'} added as coils`); } catch {}
+  location.reload();
+}
+async function mwSave() {
+  const r = await post('/outputs/writes/settings', {enabled: $('mw_enabled').value === '1', resend_seconds: parseInt($('mw_resend').value)});
+  const d = await r.json();
+  $('mwMsg').textContent = r.ok ? 'Saved' : 'Failed';
+  if (r.ok) { $('wrBadge').textContent = d.enabled ? 'Writing' : 'Off'; $('wrBadge').className = 'badge ' + (d.enabled ? 'badge-ok' : 'badge-mode'); }
+  setTimeout(() => $('mwMsg').textContent = '', 2000);
+}
+let wrEditId = null;
+function wrEditorUi() { document.querySelectorAll('#wrEditor .w-reg').forEach(el => el.hidden = $('w_area').value === 'coil'); }
+function wrEdit(id) {
+  const w = WRS.find(x => x.id === id);
+  wrEditId = id;
+  $('wrEditorTitle').textContent = 'Edit ' + w.label;
+  $('w_source').value = w.label; $('w_device').value = w.server_id; $('w_area').value = w.area;
+  $('w_address').value = w.address; $('w_type').value = w.data_type === 'bool' ? 'float32' : w.data_type;
+  $('w_order').value = w.order; $('w_scale').value = w.scale; $('w_unit').value = w.unit_id ?? '';
+  $('w_status').value = w.status_address ?? '';
+  $('wrEditorMsg').textContent = ''; wrEditorUi();
+  $('wrEditor').hidden = false; $('pick').hidden = true;
+  $('wrEditor').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+async function wrSave() {
+  const coil = $('w_area').value === 'coil';
+  const r = await post('/outputs/writes', {id: wrEditId, server_id: $('w_device').value, area: $('w_area').value,
+    address: $('w_address').value, data_type: coil ? 'bool' : $('w_type').value, order: coil ? '' : $('w_order').value,
+    scale: coil ? 1 : $('w_scale').value || 1, unit_id: $('w_unit').value, status_address: $('w_status').value});
+  const d = await r.json();
+  if (!r.ok) { $('wrEditorMsg').textContent = d.error; $('wrEditorMsg').style.color = 'var(--bad)'; return; }
   location.reload();
 }
 
@@ -360,11 +590,20 @@ async function refresh() {
       cell.title = p.kind === 'received' ? (v.written ? 'written ' + new Date(v.written).toLocaleString() : 'not written yet') : '';
       if (ok) { ok.textContent = v.valid ? '● valid' : '○ invalid'; ok.style.color = v.valid ? 'var(--ok, green)' : 'var(--bad)'; ok.className = 'pt-valid text-xs'; }
     });
+    document.querySelectorAll('#wrRows tr[data-id]').forEach(tr => {
+      const v = (d.writes || {})[tr.dataset.id], cell = tr.querySelector('.wr-val');
+      if (!v) return;
+      if (!d.writing) { cell.innerHTML = '<span class="text-muted" title="Writing is off">off</span>'; return; }
+      const val = v.value === null || v.value === undefined ? '—' : (v.value === true ? '1' : v.value === false ? '0' : v.value);
+      cell.innerHTML = v.error ? `<span class="text-xs" style="color:var(--bad)">${esc(v.error)}</span>` : esc(val);
+      cell.title = v.at ? 'last written ' + new Date(v.at).toLocaleString() + (v.error ? '\n' + v.error : '') : (v.error || 'not written yet');
+    });
   } catch {}
 }
 (function () { let t = null; try { t = sessionStorage.getItem('outputs_msg'); sessionStorage.removeItem('outputs_msg'); } catch {} if (t) msg(t); })();
 srvShow({{ status | tojson }});
 render();
+wrRender();
 refresh();
 setInterval(refresh, 2000);
 </script>
