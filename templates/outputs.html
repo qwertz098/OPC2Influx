@@ -15,39 +15,46 @@
   </div>
   <div class="card-body">
     <div class="form-row" style="gap:.75rem;flex-wrap:wrap;align-items:flex-end">
-      <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px">
-        <label class="checkbox-label"><input type="checkbox" id="ms_enabled" {% if ms.enabled %}checked{% endif %}> <strong>Server on</strong></label>
+      <div class="form-group" style="flex:0 0 110px">
+        <label class="form-label">Server</label>
+        <select class="select" id="ms_enabled">
+          <option value="1" {% if ms.enabled %}selected{% endif %}>On</option>
+          <option value="0" {% if not ms.enabled %}selected{% endif %}>Off</option>
+        </select>
       </div>
-      <div class="form-group" style="flex:0 0 100px">
+      <div class="form-group" style="flex:0 0 110px">
         <label class="form-label">Port</label>
-        <input class="input" id="ms_port" type="number" min="1" max="65535" value="{{ ms.port }}">
+        <input class="input" id="ms_port" type="text" inputmode="numeric" maxlength="5" value="{{ ms.port }}">
       </div>
-      <div class="form-group" style="flex:0 0 220px">
+      <div class="form-group" style="flex:0 0 210px">
         <label class="form-label" title="Order of 32/64-bit values; a register can override it">Byte / word order</label>
         <select class="select" id="ms_order">
           {% for o, t in [('ABCD','ABCD · big-endian'),('CDAB','CDAB · word swap'),('BADC','BADC · byte swap'),('DCBA','DCBA · little-endian')] %}
           <option value="{{ o }}" {% if ms.order == o %}selected{% endif %}>{{ t }}</option>{% endfor %}
         </select>
       </div>
-      <div class="form-group" style="flex:0 0 120px">
+      <div class="form-group" style="flex:0 0 110px">
         <label class="form-label">Update</label>
         <select class="select" id="ms_update">
           {% for v, t in [(200,'200 ms'),(500,'500 ms'),(1000,'1 s'),(2000,'2 s'),(5000,'5 s')] %}
           <option value="{{ v }}" {% if ms.update_ms == v %}selected{% endif %}>{{ t }}</option>{% endfor %}
         </select>
       </div>
-      <div class="form-group" style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px">
-        <label class="checkbox-label" title="Clients may write the registers of kind “write” (holding registers / coils). All other writes are refused.">
-          <input type="checkbox" id="ms_writable" {% if ms.writable %}checked{% endif %}> Writable</label>
-      </div>
-      <div style="flex:0 0 auto;align-self:flex-end;padding-bottom:6px;display:flex;align-items:center">
-        <button type="button" class="btn btn-primary btn-xs" style="width:auto" onclick="srvSave()">Save</button>
-        <span id="srvMsg" class="text-sm" style="margin-left:6px"></span>
+      <div class="form-group" style="flex:0 0 230px">
+        <label class="form-label" title="Writable: clients may write the registers of kind “write” (holding registers / coils). All other writes are refused.">Client writes</label>
+        <select class="select" id="ms_writable">
+          <option value="1" {% if ms.writable %}selected{% endif %}>Write registers writable</option>
+          <option value="0" {% if not ms.writable %}selected{% endif %}>Read only</option>
+        </select>
       </div>
     </div>
     <p class="text-xs text-muted" style="margin:8px 0 0">Any unit id is answered. Values are read-only for clients; with
-      <em>Writable</em>, clients can write the registers of kind <em>write</em>, e.g. setpoints or acknowledgements from a
+      <em>Write registers writable</em>, clients can write the registers of kind <em>write</em>, e.g. setpoints or acknowledgements from a
       PLC or SCADA, and those values can be recorded to InfluxDB. Addresses not in the map read 0.</p>
+    <div class="form-actions form-actions--edit">
+      <span id="srvMsg" class="text-sm" style="margin-right:auto"></span>
+      <button type="button" class="btn btn-primary btn-xs" onclick="srvSave()">Save</button>
+    </div>
   </div>
 </div>
 
@@ -59,10 +66,10 @@
     <span class="actions" style="margin-left:auto">
       <button type="button" class="btn btn-tool btn-xs" onclick="ptAll(true)">Alle an</button>
       <button type="button" class="btn btn-tool btn-xs" onclick="ptAll(false)">Alle ab</button>
-      <a class="btn btn-ghost btn-xs" href="/outputs/export.csv" title="Register map for the PLC / SCADA side">Export CSV</a>
-      <button type="button" class="btn btn-tool btn-xs" onclick="pickOpen()">+ Signals</button>
-      <button type="button" class="btn btn-tool btn-xs" onclick="addAlarms()" title="Every alarm rule as a coil: 1 while the alarm is active">+ Alarms</button>
-      <button type="button" class="btn btn-tool btn-xs" onclick="ptEdit(null, 'received')" title="A register clients write into">+ Write register</button>
+      <a class="btn btn-tool btn-xs" href="/outputs/export.csv" title="Register map for the PLC / SCADA side">Export CSV</a>
+      <button type="button" class="btn btn-primary btn-xs" onclick="pickOpen()">+ Signals</button>
+      <button type="button" class="btn btn-primary btn-xs" onclick="addAlarms()" title="Every alarm rule as a coil: 1 while the alarm is active">+ Alarms</button>
+      <button type="button" class="btn btn-primary btn-xs" onclick="ptEdit(null, 'received')" title="A register clients write into">+ Write register</button>
     </span>
   </div>
   <div class="card-body" style="padding:0">
@@ -195,8 +202,8 @@ function srvShow(s) {
                                        : (s.error || '');
 }
 async function srvSave() {
-  const r = await post('/outputs/server', {enabled: $('ms_enabled').checked, port: parseInt($('ms_port').value) || 5020,
-    order: $('ms_order').value, update_ms: parseInt($('ms_update').value), writable: $('ms_writable').checked});
+  const r = await post('/outputs/server', {enabled: $('ms_enabled').value === '1', port: parseInt($('ms_port').value) || 5020,
+    order: $('ms_order').value, update_ms: parseInt($('ms_update').value), writable: $('ms_writable').value === '1'});
   const d = await r.json();
   $('srvMsg').textContent = r.ok ? 'Saved' : (d.error || 'Failed'); $('srvMsg').style.color = r.ok ? '' : 'var(--bad)';
   if (r.ok) srvShow(d);
