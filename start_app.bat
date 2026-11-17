@@ -64,12 +64,15 @@ if "%BEHIND%"=="0" (
     echo [Update] Up to date.
     exit /b
 )
+rem Local changes to tracked files? (git diff: exit code 1 = changes)
 set DIRTY=
-for /f %%s in ('git status --porcelain --untracked-files=no') do set DIRTY=1
+git diff --quiet 2>nul || set DIRTY=1
+git diff --cached --quiet 2>nul || set DIRTY=1
 if defined DIRTY (
-    echo [Update] %BEHIND% new commit^(s^) on GitHub, but there are local changes:
-    git --no-pager status --short --untracked-files=no
-    echo [Update] Not updated. Commit or discard the changes, then start again.
+    echo [Update] %BEHIND% new commit^(s^) on GitHub, but these files were changed here:
+    git --no-pager diff --name-only HEAD
+    echo [Update] Not updated - starting the current version.
+    echo [Update] To take the GitHub version, discard the changes:  git checkout -- ^<file^>
     exit /b
 )
 echo [Update] %BEHIND% new commit^(s^):
@@ -78,6 +81,7 @@ git --no-pager log --oneline HEAD..@{u}
     git pull --ff-only --quiet
     if errorlevel 1 (
         echo [Update] Update failed - starting the current version.
+        echo [Update] Run "git status" in this folder to see why.
         exit /b
     )
     echo [Update] Updated - restarting with the new version.
