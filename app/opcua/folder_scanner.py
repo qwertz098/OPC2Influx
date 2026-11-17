@@ -40,13 +40,12 @@ async def _scan_children(mgr, server_id: str, node_id: str | None) -> tuple[list
     requests, but a *page-capped* Browse to get the child list itself.
 
     Root cause found: the true hang was never the attribute reads — it was
-    the initial Browse itself. Observed on a WAGO PFC300: browsing a folder
+    the initial Browse itself. Observed on a PLC: browsing a folder
     with >100 children forces ContinuationPoint pagination, which either
     hangs indefinitely or (confirmed once, after 73 minutes) loops
     accumulating millions of duplicate references without the server ever
     signalling completion. Folders with <=100 children need no pagination
-    and always complete normally (proven repeatedly on this PLC's "Modbus"
-    group). _browse_paged enforces a hard page cap and reports truncation
+    and always complete normally. _browse_paged enforces a hard page cap and reports truncation
     instead of ever blocking on/trusting server-side pagination completeness.
 
     Returns (children, truncated). truncated=True means the list is incomplete

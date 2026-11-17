@@ -24,6 +24,25 @@ def signal_label(state: "RuntimeState", subscription_id: str) -> str:
     return apply_name_strips(sub.influxdb.measurement, strips)
 
 
+def signal_labels(state: "RuntimeState") -> dict[str, str]:
+    """Labels for pickers and lists: the short name, or the full measurement
+    (path) where several subscriptions share the short name (e.g. "rValue")."""
+    subs = state.config.subscriptions.subscriptions
+    short = {s.id: signal_label(state, s.id) for s in subs}
+    count: dict[str, int] = {}
+    for v in short.values():
+        count[v] = count.get(v, 0) + 1
+    strips = {srv.id: srv.name_strip_prefixes for srv in state.config.servers.servers}
+    out = {}
+    for s in subs:
+        name = short[s.id]
+        if count[name] > 1:
+            full = apply_name_strips(s.influxdb.measurement, strips.get(s.server_id, []))
+            name = full if full and full != name else f"{name} ({s.node_id})"
+        out[s.id] = name
+    return out
+
+
 def _plain(raw):
     """Numbers stay numbers (bool → 0 / 1), anything else becomes text."""
     if isinstance(raw, bool):

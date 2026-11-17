@@ -25,6 +25,7 @@ class ServerStatus:
     last_error: str | None = None
     reconnect_attempts: int = 0
     alerted: bool = False          # True once a "lost" alert has been sent
+    limits: dict = field(default_factory=dict)   # OPC UA request sizes in use (app/opcua/limits.py)
 
 
 @dataclass

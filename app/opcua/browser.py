@@ -11,6 +11,8 @@ from typing import Any
 from asyncua import ua
 from asyncua.common.node import Node
 
+from app.opcua.limits import browse_limit, read_limit
+
 logger = logging.getLogger(__name__)
 
 # Map UA NodeClass int to string
@@ -135,14 +137,11 @@ async def get_node_info(
     )
 
 
-# Cap items per bulk service call. PLC stacks enforce hard OperationLimits —
-# the WAGO PFC300 reports MaxNodesPerRead=100 and MaxNodesPerBrowse=100 and
-# rejects anything larger with BadTooManyOperations.
-_BULK_READ_CHUNK = 100
-_BULK_BROWSE_CHUNK = 100
-
+# Items per bulk service call: the server's OperationLimits (MaxNodesPerRead /
+# MaxNodesPerBrowse) via browse_limit / read_limit (app/opcua/limits.py).
+# PLC stacks reject larger requests with BadTooManyOperations.
 # Hard cap on Browse pagination (ContinuationPoint/BrowseNext) for a single
-# node's children. Observed on a WAGO PFC300: browsing a folder with >100
+# node's children. Observed on a PLC: browsing a folder with >100
 # children (which forces pagination) either hangs indefinitely or — worse —
 # loops accumulating millions of duplicate references over many minutes
 # without the server ever returning an empty ContinuationPoint. A folder
@@ -154,7 +153,7 @@ _MAX_BROWSE_PAGES = 3
 _BROWSE_PAGE_TIMEOUT = 20
 
 
-async def _browse_paged(client, node: Node, page_size: int = 100) -> tuple[list, bool]:
+async def _browse_paged(client, node: Node, page_size: int | None = None) -> tuple[list, bool]:
     """Browse one node's children with a hard page cap.
 
     Returns (references, truncated). truncated=True means the folder has
@@ -162,6 +161,7 @@ async def _browse_paged(client, node: Node, page_size: int = 100) -> tuple[list,
     callers that need completeness (e.g. dynamic folder scanning) must NOT
     treat a truncated result as "these are all the current children".
     """
+    page_size = page_size or browse_limit(client)
     params = ua.BrowseParameters()
     params.View.Timestamp = ua.get_win_epoch()
     params.RequestedMaxReferencesPerNode = page_size
@@ -225,9 +225,10 @@ async def _bulk_read(client, items: list[tuple[Any, int]]) -> list[Any]:
     Returns the raw DataValue per item (None Value on bad status).
     """
     results: list[Any] = []
-    for start in range(0, len(items), _BULK_READ_CHUNK):
+    chunk = read_limit(client)
+    for start in range(0, len(items), chunk):
         params = ua.ReadParameters()
-        for nid, attr in items[start:start + _BULK_READ_CHUNK]:
+        for nid, attr in items[start:start + chunk]:
             rv = ua.ReadValueId()
             rv.NodeId = nid
             rv.AttributeId = attr
@@ -239,10 +240,11 @@ async def _bulk_read(client, items: list[tuple[Any, int]]) -> list[Any]:
 async def _bulk_has_children(client, node_ids: list[Any]) -> list[bool]:
     """One Browse service call answering 'has any hierarchical child?' per node."""
     flags: list[bool] = []
-    for start in range(0, len(node_ids), _BULK_BROWSE_CHUNK):
+    chunk = browse_limit(client)
+    for start in range(0, len(node_ids), chunk):
         params = ua.BrowseParameters()
         params.RequestedMaxReferencesPerNode = 1
-        for nid in node_ids[start:start + _BULK_BROWSE_CHUNK]:
+        for nid in node_ids[start:start + chunk]:
             bd = ua.BrowseDescription()
             bd.NodeId = nid
             bd.BrowseDirection = ua.BrowseDirection.Forward
@@ -282,7 +284,7 @@ async def _children_bulk(
     allowed type — reading live Value for every node is pure overhead there,
     and on some PLC stacks reading Value for many "global" variables at once
     is dramatically slower than reading their other attributes (observed:
-    a WAGO PFC300 taking >120s for a Value-inclusive bulk read that returns
+    a PLC taking >120s for a Value-inclusive bulk read that returns
     in under a second once Value is dropped).
 
     Returns (infos, truncated) — see _browse_paged.

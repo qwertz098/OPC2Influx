@@ -38,6 +38,7 @@ class OpcUaClientManager:
         # read them through the same interface (see app/modbus/manager.py)
         from app.modbus.manager import ModbusManager
         self.modbus = ModbusManager(state)
+        self._detected: dict[str, tuple[int, int]] = {}   # server → OperationLimits it reports
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -76,7 +77,8 @@ class OpcUaClientManager:
     @staticmethod
     def _conn_key(srv: ServerConfig) -> tuple:
         return (srv.endpoint_url, srv.security_mode, srv.security_policy,
-                srv.auth.model_dump(), srv.session_timeout_ms)
+                srv.auth.model_dump(), srv.session_timeout_ms,
+                srv.max_nodes_per_read, srv.max_nodes_per_browse)
 
     async def reconcile(self) -> None:
         """Called when server config changes. Adds new, removes deleted, restarts changed servers."""
@@ -127,6 +129,9 @@ class OpcUaClientManager:
             try:
                 client = await self._make_client(srv)
                 await client.connect()
+                from app.opcua import limits
+                self._detected[srv.id] = await limits.detect(client)
+                status.limits = limits.apply(client, srv, self._detected[srv.id])
                 self._node_cache.pop(srv.id, None)
                 self._clients[srv.id] = client
                 status.connected = True
@@ -233,6 +238,9 @@ class OpcUaClientManager:
             try:
                 client = await self._make_client(srv)
                 await client.connect()
+                from app.opcua import limits
+                detected = self._detected.get(server_id) or await limits.detect(client)
+                limits.apply(client, srv, detected)
                 self._browse_clients[server_id] = client
                 return client
             except Exception as exc:
@@ -278,9 +286,6 @@ class OpcUaClientManager:
         node = self._get_cached_node(server_id, node_id, client)
         return await node.read_value()
 
-    # PLC stacks enforce hard OperationLimits (WAGO PFC300: MaxNodesPerRead=100)
-    # and reject larger requests with BadTooManyOperations.
-    _READ_CHUNK = 100
 
     async def read_node_values(self, server_id: str, node_ids: list[str]) -> list[Any]:
         """Read many node values in as few OPC UA Read service calls as possible.
@@ -293,8 +298,10 @@ class OpcUaClientManager:
         client = self._require_client(server_id)
         nodes = [self._get_cached_node(server_id, nid, client) for nid in node_ids]
         values: list[Any] = []
-        for start in range(0, len(nodes), self._READ_CHUNK):
-            values.extend(await client.read_values(nodes[start:start + self._READ_CHUNK]))
+        from app.opcua.limits import read_limit
+        chunk = read_limit(client)          # the server's OperationLimits (app/opcua/limits.py)
+        for start in range(0, len(nodes), chunk):
+            values.extend(await client.read_values(nodes[start:start + chunk]))
         return values
 
     async def read_node_attributes(self, server_id: str, node_id: str) -> dict[str, Any]:
