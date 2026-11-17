@@ -208,7 +208,7 @@ class PollingEngine:
                     continue
 
                 # read_node_values chunks internally to stay within the
-                # server's OperationLimits (e.g. WAGO MaxNodesPerRead=100).
+                # server's OperationLimits (app/opcua/limits.py).
                 values = await mgr.read_node_values(server_id, node_ids)
 
                 # Central tag lookup built once per cycle, not once per value

@@ -65,6 +65,21 @@
           <input class="input" type="password" name="password" autocomplete="current-password">
         </div>
       </div>
+      <div class="form-row">
+        {% set lim = (server_status.get(srv.id).limits if server_status and server_status.get(srv.id) else {}) %}
+        <div class="form-group" style="flex:0 0 170px">
+          <label class="form-label" title="Nodes per OPC UA Read request. Empty: what the server reports (OperationLimits), else 100. PLCs refuse larger requests.">Max. nodes per read</label>
+          <input class="input" type="number" name="max_nodes_per_read" min="1" max="10000"
+                 value="{{ srv.max_nodes_per_read or '' }}"
+                 placeholder="auto{% if lim.server_read %} (server: {{ lim.server_read }}){% endif %}">
+        </div>
+        <div class="form-group" style="flex:0 0 170px">
+          <label class="form-label" title="Nodes per OPC UA Browse request and references per browse page. Empty: what the server reports, else 100.">Max. nodes per browse</label>
+          <input class="input" type="number" name="max_nodes_per_browse" min="1" max="10000"
+                 value="{{ srv.max_nodes_per_browse or '' }}"
+                 placeholder="auto{% if lim.server_browse %} (server: {{ lim.server_browse }}){% endif %}">
+        </div>
+      </div>
       {% endif %}
       <div class="form-row">
         <div class="form-group" style="max-width:200px">

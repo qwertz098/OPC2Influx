@@ -40,8 +40,9 @@ def _next_free(points: list[OutputPointConfig], area: str, count: int = 1) -> in
     return addr
 
 
-def _point_json(state: RuntimeState, p: OutputPointConfig, bad: dict) -> dict:
-    return {**p.model_dump(), "label": label_of(p, state), "modicon": modicon(p.area, p.address),
+def _point_json(state: RuntimeState, p: OutputPointConfig, bad: dict, labels: dict | None = None) -> dict:
+    label = labels.get(p.source_id) if labels and p.kind == "value" and not p.name else None
+    return {**p.model_dump(), "label": label or label_of(p, state), "modicon": modicon(p.area, p.address),
             "count": register_count(p.area, point_type(p)), "problem": bad.get(p.id, "")}
 
 
@@ -50,13 +51,14 @@ async def page(request: Request, state: RuntimeState = Depends(get_state)):
     out = state.config.outputs
     bad = overlaps(out.points)
     subs = state.config.subscriptions.subscriptions
-    from app.references.capture import signal_label
+    from app.references.capture import signal_labels
+    labels = signal_labels(state)
     return templates.TemplateResponse(request, "outputs.html", {
         "request": request, "ms": out.modbus_server,
-        "points": [_point_json(state, p, bad) for p in out.points],
-        "subs": [{"id": s.id, "label": signal_label(state, s.id), "measurement": s.influxdb.measurement,
+        "points": [_point_json(state, p, bad, labels) for p in out.points],
+        "subs": [{"id": s.id, "label": labels.get(s.id, s.id), "measurement": s.influxdb.measurement,
                   "enabled": s.enabled} for s in subs],
-        "rules": [{"id": r.id, "label": r.name or signal_label(state, r.subscription_id)}
+        "rules": [{"id": r.id, "label": r.name or labels.get(r.subscription_id, r.subscription_id)}
                   for r in state.config.alarm_rules.rules],
         "status": state.modbus_output.status() if state.modbus_output else {},
         "types": list(TYPES),
@@ -224,11 +226,14 @@ async def export_csv(state: RuntimeState = Depends(get_state)):
     ms = state.config.outputs.modbus_server
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
+    from app.references.capture import signal_labels
+    labels = signal_labels(state)
     w.writerow(["name", "kind", "access", "area", "address", "modicon", "type", "order", "registers", "scale",
                 "status_discrete_input", "status_modicon", "enabled"])
     for p in sorted(state.config.outputs.points, key=lambda p: (list(AREAS).index(p.area), p.address)):
         t = point_type(p)
-        w.writerow([label_of(p, state), p.kind, "write" if p.kind == "received" else "read", p.area, p.address,
+        name = labels.get(p.source_id) if p.kind == "value" and not p.name else None
+        w.writerow([name or label_of(p, state), p.kind, "write" if p.kind == "received" else "read", p.area, p.address,
                     modicon(p.area, p.address), t, "" if t == "bool" or TYPES[t][0] == 1 else (p.order or ms.order),
                     register_count(p.area, t), "" if t == "bool" else f"{p.scale:g}",
                     "" if p.status_address is None else p.status_address,

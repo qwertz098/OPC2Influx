@@ -184,3 +184,18 @@ async def test_add_signals_and_alarms(async_client, tmp_config_dir):
     assert got == [("alarm", "coil", 0, "bool", None), ("alarm", "coil", 1, "bool", None),
                    ("value", "holding", 0, "float32", 0), ("value", "holding", 2, "float32", 1),
                    ("value", "coil", 2, "bool", 2)]                     # the bit goes to a coil
+
+
+def test_signal_labels_unique(minimal_state):
+    from app.config import SubscriptionInfluxConfig
+    from app.references.capture import signal_labels
+    minimal_state.config.subscriptions.subscriptions = [
+        SubscriptionConfig(id="a", server_id="s", node_id="n1", display_name="rValue",
+                           influxdb=SubscriptionInfluxConfig(measurement="Pump_A.rValue")),
+        SubscriptionConfig(id="b", server_id="s", node_id="n2", display_name="rValue",
+                           influxdb=SubscriptionInfluxConfig(measurement="Pump_B.rValue")),
+        SubscriptionConfig(id="c", server_id="s", node_id="n3", display_name="Speed",
+                           influxdb=SubscriptionInfluxConfig(measurement="Plant.Speed")),
+    ]
+    assert signal_labels(minimal_state) == {"a": "Pump_A.rValue", "b": "Pump_B.rValue",
+                                            "c": "Speed"}

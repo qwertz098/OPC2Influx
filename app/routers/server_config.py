@@ -108,6 +108,7 @@ async def edit_server(
     return templates.TemplateResponse(request, "partials/server_edit_form.html", {
         "request": request,
         "srv": srv,
+        "server_status": state.server_status,
     })
 
 
@@ -143,6 +144,8 @@ async def update_server(
                 if new_pw:
                     srv.auth.password = new_pw
             srv.bool_as_int = form.get("bool_as_int") == "1"
+            srv.max_nodes_per_read = _int(form, "max_nodes_per_read", 0, 0, 10000)
+            srv.max_nodes_per_browse = _int(form, "max_nodes_per_browse", 0, 0, 10000)
             break
     save_servers(state.config.servers, state.config_dir)
     if state.opcua_manager:

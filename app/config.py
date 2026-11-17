@@ -133,6 +133,10 @@ class ServerConfig(BaseModel):
     static_tags: list[ServerStaticTag] = []
     bool_as_int: bool = False
     name_strip_prefixes: list[str] = []
+    # OPC UA request size: nodes per Read / Browse request; 0 = what the server
+    # reports (OperationLimits), else 100 (see app/opcua/limits.py)
+    max_nodes_per_read: int = 0
+    max_nodes_per_browse: int = 0
     modbus: ModbusServerSettings = Field(default_factory=ModbusServerSettings)
 
 

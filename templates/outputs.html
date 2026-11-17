@@ -113,7 +113,8 @@
       </div>
     </div>
     <div class="form-actions form-actions--edit">
-      <span class="text-xs text-muted" style="margin-right:auto">Placed at the next free addresses; change single ones with Edit.</span>
+      <span class="text-xs text-muted" style="margin-right:auto">Placed at the next free addresses; change single ones with Edit.
+        Grey: subscription is off (not read, no value until switched on).</span>
       <button type="button" class="btn btn-primary btn-xs" id="pickBtn" onclick="pickAdd()" disabled>Add</button>
       <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('pick').hidden = true">Cancel</button>
     </div>
@@ -328,7 +329,7 @@ function pickCandidates() {
 }
 function pickRender() {
   const list = pickCandidates();
-  $('pickList').innerHTML = list.length ? list.slice(0, 500).map(s => `<label class="pick-item ${s.enabled ? '' : 'opacity-50'}">
+  $('pickList').innerHTML = list.length ? list.slice(0, 500).map(s => `<label class="pick-item ${s.enabled ? '' : 'opacity-50'}" title="${esc(s.label)}${s.enabled ? '' : '&#10;Subscription is off: not read, so no value (status bit 0) until it is switched on'}">
       <input type="checkbox" value="${s.id}" ${picked.has(s.id) ? 'checked' : ''} onchange="pickOne(this)"> <span>${esc(s.label)}</span></label>`).join('')
     : '<p class="text-sm text-muted">No signals left to add.</p>';
   $('pickAll').checked = list.length > 0 && list.every(s => picked.has(s.id));

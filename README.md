@@ -564,7 +564,7 @@ Use backup to migrate between instances or to keep versioned snapshots of your s
 
 The app is designed to stay responsive over slow links (e.g. a PLC reached through an IXON VPN) and to keep the load on the OPC UA server low:
 
-- **Batched polling** — subscriptions are grouped per server and polling interval, and each group is read with as few OPC UA Read service calls as possible per cycle. Requests are split into chunks of 100 nodes to respect PLC operation limits (the WAGO PFC300 rejects larger requests — `MaxNodesPerRead=100`); this splitting is transparent and never drops nodes. 100 subscriptions at 1 s therefore cost ~1 request/s instead of 100.
+- **Batched polling** — subscriptions are grouped per server and polling interval, and each group is read with as few OPC UA Read service calls as possible per cycle. Requests are split into chunks that respect the server's operation limits (`MaxNodesPerRead` / `MaxNodesPerBrowse`, read from the server after connecting, 100 if it reports none, or set per server in its settings) — PLCs reject larger requests; this splitting is transparent and never drops nodes. 100 subscriptions at 1 s therefore cost ~1 request/s instead of 100.
 - **Bulk browsing** — expanding a folder in the Browser costs a fixed 3 service calls regardless of the number of children.
 - **Batched chart reads** — the live chart serves values from the polling cache where possible and batches any remaining live reads into one call per server.
 - **HTTP compression & caching** — all responses are gzip-compressed and static assets (including the ~1 MB chart library) are cached immutably with version-busting, so remote page loads stay small.

@@ -18,6 +18,9 @@
     <strong>{{ srv.display_name }}</strong>
     {% if srv.protocol == 'modbus' %}<span class="badge badge-mode">Modbus TCP</span>{% endif %}
     <span class="mono text-sm text-muted">{{ srv.endpoint_url }}</span>
+    {% if srv.protocol == 'opcua' and status and status.limits %}{% set l = status.limits %}
+    <span class="text-xs text-muted" title="Nodes per OPC UA request: read {{ l.read }} ({{ l.read_from }}), browse {{ l.browse }} ({{ l.browse_from }}). The server reports read {{ l.server_read or 'nothing' }}, browse {{ l.server_browse or 'nothing' }}. Change in Edit.">max. {{ l.read }}/{{ l.browse }} nodes</span>
+    {% endif %}
     <span style="margin-left:auto" class="actions">
       {% if srv.protocol == 'modbus' %}
       {% set regs = register_counts.get(srv.id, (0, 0)) %}
