@@ -143,7 +143,10 @@ async def test_output_routes(async_client, tmp_config_dir):
     import yaml
     c = async_client
     page = await c.get("/outputs")
-    assert page.status_code == 200 and "Register map" in page.text
+    assert page.status_code == 200 and "Nothing is published yet" in page.text
+    await c.post("/outputs/tiles", json={"add": "modbus_server"})
+    page = await c.get("/outputs")
+    assert "Register map" in page.text
     # a write register, an overlap, a bad area
     r = await c.post("/outputs/points", json={"kind": "received", "name": "SP", "area": "holding", "address": "10",
                                               "data_type": "int16", "scale": "10", "record": True})
@@ -264,7 +267,7 @@ def test_write_service_to_device(state):
         await mgr.stop_all()
         await device.stop()
         await svc.tick()
-        assert svc.results["w1"].error == "device not found (a Modbus server on the Inputs page)" or \
+        assert svc.results["w1"].error == "device not found (a Modbus server on the Servers page)" or \
             "not connected" in svc.results["w1"].error
     asyncio.run(go())
 
@@ -306,3 +309,29 @@ async def test_write_routes(async_client, tmp_config_dir):
     assert "also read from this device as" in page.text     # hr1 int32 overlaps register A (hr0–1)
     v = (await c.get("/outputs/values")).json()
     assert v["writing"] is True and len(v["writes"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_output_tiles(async_client, tmp_config_dir):
+    import yaml
+    c = async_client
+    page = (await c.get("/outputs")).text
+    assert "Nothing is published yet" in page and 'id="tile-modbus_server"' not in page
+    assert (await c.post("/outputs/tiles", json={"add": "modbus_server"})).json() == {"tiles": ["modbus_server"]}
+    assert (await c.post("/outputs/tiles", json={"add": "modbus_write"})).json() == {"tiles": ["modbus_server", "modbus_write"]}
+    page = (await c.get("/outputs")).text
+    assert 'id="tile-modbus_server"' in page and 'id="tile-modbus_write"' in page and "+ Modbus server</button>" not in page
+    await c.post("/outputs/server", json={"enabled": True, "port": 0})
+    r = await c.post("/outputs/tiles", json={"remove": "modbus_server"})
+    assert r.json() == {"tiles": ["modbus_write"]}
+    cfg = yaml.safe_load((tmp_config_dir / "outputs.yaml").read_text())
+    assert cfg["modbus_server"]["enabled"] is False and cfg["modbus_server"]["port"] == 0   # settings kept
+    assert (await c.post("/outputs/tiles", json={"add": "mqtt_write"})).status_code == 400
+
+
+def test_tiles_from_existing_config():
+    from app.config import ModbusWriteConfig, OutputsConfig
+    assert OutputsConfig().shown_tiles() == []
+    o = OutputsConfig(points=[OutputPointConfig()])
+    o.modbus_writes.targets = [ModbusWriteConfig()]
+    assert o.shown_tiles() == ["modbus_server", "modbus_write"]
